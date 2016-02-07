@@ -16,6 +16,7 @@ DH_VERBOSE := 1
 # and use what is set there.
 
 export PYBUILD_NAME=cwltool
+export PYBUILD_DISABLE=test
 
 %:
 	dh $@ --with python2 --buildsystem=pybuild

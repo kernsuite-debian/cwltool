@@ -1,3 +1,5 @@
+Author: Michael R. Crusoe <crusoe@ucdavis.edu>
+Description: Try the older rdflib
 --- cwltool.orig/setup.py
 +++ cwltool/setup.py
 @@ -33,7 +33,7 @@
