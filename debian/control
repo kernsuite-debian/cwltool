@@ -12,8 +12,8 @@ Build-Depends: debhelper (>= 9),
                python-schema-salad,
                python-shellescape
 Standards-Version: 3.9.7
-Vcs-Browser: https://anonscm.debian.org/cgit/debian-med/macs.git
-Vcs-Git: https://anonscm.debian.org/git/debian-med/macs.git
+Vcs-Browser: https://anonscm.debian.org/cgit/debian-med/cwltool.git
+Vcs-Git: https://anonscm.debian.org/git/debian-med/cwltool.git
 Homepage: http://www.commonwl.org
 X-Python-Version: >= 2.7
 
