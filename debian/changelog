@@ -1,8 +1,7 @@
-cwltool (1.0.20160203221531-1) UNRELEASED; urgency=medium
+cwltool (1.0.20160209222805-1) UNRELEASED; urgency=medium
 
   * Initial release. (Closes: #814000)
 
   [Steffen Moeller]
-  * Added help2man-generated man pages.
 
  -- Michael R. Crusoe <crusoe@ucdavis.edu>  Mon, 22 Feb 2016 21:22:21 +0100

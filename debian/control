@@ -11,6 +11,8 @@ Build-Depends: debhelper (>= 9),
                python-rdflib-jsonld,
                python-schema-salad,
                python-shellescape,
+               python-html5lib,
+               python-sparqlwrapper,
                help2man
 Standards-Version: 3.9.7
 Vcs-Browser: https://anonscm.debian.org/cgit/debian-med/cwltool.git
