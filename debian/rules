@@ -21,3 +21,15 @@ export PYBUILD_DISABLE=test
 %:
 	dh $@ --with python2 --buildsystem=pybuild
 
+debian/cwltool.1: debian/rules debian/cwltool.help2man
+	#help2man cwltool/main.py -I debian/cwltool.help2man -N -n "Reference executor for Common Workflow Language" -o debian/cwltool.1
+	help2man cwltool/main.py -I debian/cwltool.help2man -N -o debian/cwltool.1
+debian/cwltest.1: debian/rules debian/cwltest.help2man
+	help2man cwltool/cwltest.py -I debian/cwltest.help2man -N -o debian/cwltest.1 --version-string "$$(dpkg-parsechangelog  | grep Version:  | cut -f2 -d\ )"
+
+override_dh_installman: debian/cwltest.1 debian/cwltool.1
+	dh_installman
+
+override_dh_clean:
+	dh_clean
+	rm -f debian/cwltest.1 debian/cwltool.1
