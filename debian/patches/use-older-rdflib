@@ -2,7 +2,7 @@ Author: Michael R. Crusoe <crusoe@ucdavis.edu>
 Description: Try the older rdflib
 --- cwltool.orig/setup.py
 +++ cwltool/setup.py
-@@ -33,7 +33,7 @@
+@@ -36,7 +36,7 @@
        install_requires=[
            'requests',
            'PyYAML',
@@ -10,4 +10,4 @@ Description: Try the older rdflib
 +          'rdflib >= 4.1.0',
            'rdflib-jsonld >= 0.3.0',
            'shellescape',
-           'schema_salad == 1.6.20160202222448'
+           'schema_salad == 1.7.20160316203940'
