@@ -47,8 +47,8 @@ class CommandLineJob(object):
         (docker_req, docker_is_req) = get_feature(self, "DockerRequirement")
 
         for f in self.pathmapper.files():
-            if not os.path.exists(self.pathmapper.mapper(f)[0]):
-                raise WorkflowException("Required input file %s not found" % self.pathmapper.mapper(f)[0])
+            if not os.path.isfile(self.pathmapper.mapper(f)[0]):
+                raise WorkflowException("Required input file %s not found or is not a regular file." % self.pathmapper.mapper(f)[0])
 
         img_id = None
         if docker_req and kwargs.get("use_container") is not False:
@@ -67,7 +67,12 @@ class CommandLineJob(object):
             runtime.append("--volume=%s:%s:rw" % (os.path.abspath(self.tmpdir), "/tmp"))
             runtime.append("--workdir=%s" % ("/var/spool/cwl"))
             runtime.append("--read-only=true")
-            runtime.append("--net=none")
+            if kwargs.get("enable_net") is not True:
+                runtime.append("--net=none")
+
+            if self.stdout:
+                runtime.append("--log-driver=none")
+
             euid = docker_vm_uid() or os.geteuid()
             runtime.append("--user=%s" % (euid))
 

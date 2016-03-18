@@ -11,7 +11,7 @@ import glob
 import logging
 import hashlib
 import random
-from process import Process, shortname, uniquename
+from process import Process, shortname, uniquename, adjustFileObjs
 from errors import WorkflowException
 import schema_salad.validate as validate
 from aslist import aslist
@@ -50,6 +50,32 @@ class ExpressionTool(Process):
         j.tmpdir = None
 
         yield j
+
+def remove_hostfs(f):
+    if "hostfs" in f:
+        del f["hostfs"]
+
+def revmap_file(builder, outdir, f):
+    """Remap a file back to original path. For Docker, this is outside the container.
+
+    Uses either files in the pathmapper or remaps internal output directories
+    to the external directory.
+    """
+
+    if f.get("hostfs"):
+        return
+
+    revmap_f = builder.pathmapper.reversemap(f["path"])
+    if revmap_f:
+        f["path"] = revmap_f[1]
+        f["hostfs"] = True
+        return f
+    elif f["path"].startswith(builder.outdir):
+        f["path"] = os.path.join(outdir, f["path"][len(builder.outdir)+1:])
+        f["hostfs"] = True
+        return f
+    else:
+        raise WorkflowException("Output file path %s must be within designated output directory (%s) or an input file pass through." % (f["path"], builder.outdir))
 
 
 class CommandLineTool(Process):
@@ -102,6 +128,7 @@ class CommandLineTool(Process):
         reffiles = set((f["path"] for f in builder.files))
 
         j = self.makeJobRunner()
+        j.builder = builder
         j.joborder = builder.job
         j.stdin = None
         j.stdout = None
@@ -135,8 +162,16 @@ class CommandLineTool(Process):
         builder.pathmapper = self.makePathMapper(reffiles, input_basedir, **kwargs)
         builder.requirements = j.requirements
 
-        for f in builder.files:
-            f["path"] = builder.pathmapper.mapper(f["path"])[1]
+        # map files to assigned path inside a container. We need to also explicitly
+        # walk over input as implicit reassignment doesn't reach everything in builder.bindings
+        def _check_adjust(f):
+            if not f.get("containerfs"):
+                f["path"] = builder.pathmapper.mapper(f["path"])[1]
+                f["containerfs"] = True
+            return f
+
+        adjustFileObjs(builder.files, _check_adjust)
+        adjustFileObjs(builder.bindings, _check_adjust)
 
         _logger.debug("[job %s] command line bindings is %s", j.name, json.dumps(builder.bindings, indent=4))
         _logger.debug("[job %s] path mappings is %s", j.name, json.dumps({p: builder.pathmapper.mapper(p) for p in builder.pathmapper.files()}, indent=4))
@@ -183,17 +218,23 @@ class CommandLineTool(Process):
 
     def collect_output_ports(self, ports, builder, outdir):
         try:
+            ret = {}
             custom_output = os.path.join(outdir, "cwl.output.json")
             if builder.fs_access.exists(custom_output):
-                outputdoc = yaml.load(custom_output)
-                validate.validate_ex(self.names.get_name("outputs_record_schema", ""), outputdoc)
-                return outputdoc
-
-            ret = {}
+                with builder.fs_access.open(custom_output, "r") as f:
+                    ret = yaml.load(f)
+                _logger.debug("Raw output from %s: %s", custom_output, json.dumps(ret, indent=4))
+                adjustFileObjs(ret, remove_hostfs)
+                adjustFileObjs(ret, functools.partial(revmap_file, builder, outdir))
+                adjustFileObjs(ret, remove_hostfs)
+                validate.validate_ex(self.names.get_name("outputs_record_schema", ""), ret)
+                return ret
 
             for port in ports:
                 fragment = shortname(port["id"])
                 ret[fragment] = self.collect_output(port, builder, outdir)
+            if ret:
+                adjustFileObjs(ret, remove_hostfs)
             validate.validate_ex(self.names.get_name("outputs_record_schema", ""), ret)
             return ret if ret is not None else {}
         except validate.ValidationException as e:
@@ -204,16 +245,25 @@ class CommandLineTool(Process):
         if "outputBinding" in schema:
             binding = schema["outputBinding"]
             globpatterns = []
+
+            revmap = functools.partial(revmap_file, builder, outdir)
+
             if "glob" in binding:
                 r = []
                 for gb in aslist(binding["glob"]):
+                    gb = builder.do_eval(gb)
+                    if gb:
+                        globpatterns.extend(aslist(gb))
+
+                for gb in globpatterns:
+                    if gb.startswith("/"):
+                        raise WorkflowError("glob patterns must not start with '/'")
                     try:
-                        gb = builder.do_eval(gb)
-                        globpatterns.append(gb)
-                        if gb:
-                            r.extend([{"path": g, "class": "File"} for g in builder.fs_access.glob(os.path.join(outdir, gb))])
+                        r.extend([{"path": g, "class": "File", "hostfs": True}
+                                  for g in builder.fs_access.glob(os.path.join(outdir, gb))])
                     except (OSError, IOError) as e:
                         _logger.warn(str(e))
+
                 for files in r:
                     checksum = hashlib.sha1()
                     with builder.fs_access.open(files["path"], "rb") as f:
@@ -262,6 +312,9 @@ class CommandLineTool(Process):
                     else:
                         r = r[0]
 
+            # Ensure files point to local references outside of the run environment
+            adjustFileObjs(r, revmap)
+
             if "secondaryFiles" in schema:
                 for primary in aslist(r):
                     if isinstance(primary, dict):
@@ -270,9 +323,9 @@ class CommandLineTool(Process):
                             if isinstance(sf, dict) or "$(" in sf or "${" in sf:
                                 sfpath = builder.do_eval(sf, context=r)
                                 if isinstance(sfpath, basestring):
-                                    sfpath = {"path": sfpath, "class": "File"}
+                                    sfpath = revmap({"path": sfpath, "class": "File"})
                             else:
-                                sfpath = {"path": substitute(primary["path"], sf), "class": "File"}
+                                sfpath = {"path": substitute(primary["path"], sf), "class": "File", "hostfs": True}
 
                             for sfitem in aslist(sfpath):
                                 if builder.fs_access.exists(sfitem["path"]):

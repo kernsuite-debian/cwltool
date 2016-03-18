@@ -141,6 +141,18 @@ def adjustFiles(rec, op):
         for d in rec:
             adjustFiles(d, op)
 
+def adjustFileObjs(rec, op):
+    """Apply an update function to each File object in the object `rec`."""
+
+    if isinstance(rec, dict):
+        if rec.get("class") == "File":
+            op(rec)
+        for d in rec:
+            adjustFileObjs(rec[d], op)
+    if isinstance(rec, list):
+        for d in rec:
+            adjustFileObjs(d, op)
+
 def formatSubclassOf(fmt, cls, ontology, visited):
     """Determine if `fmt` is a subclass of `cls`."""
 
@@ -191,6 +203,8 @@ class Process(object):
         self.hints = kwargs.get("hints", []) + self.tool.get("hints", [])
         if "loader" in kwargs:
             self.formatgraph = kwargs["loader"].graph
+        else:
+            self.formatgraph = None
 
         self.validate_hints(self.tool.get("hints", []), strict=kwargs.get("strict"))
 
@@ -267,6 +281,7 @@ class Process(object):
         builder.names = self.names
         builder.requirements = self.requirements
         builder.resources = {}
+        builder.timeout = kwargs.get("eval_timeout")
 
         dockerReq, _ = self.get_requirement("DockerRequirement")
         if dockerReq and kwargs.get("use_container"):
@@ -370,3 +385,35 @@ def uniquename(stem):
         u = "%s_%s" % (stem, c)
     _names.add(u)
     return u
+
+def scandeps(base, doc, reffields, urlfields):
+    r = []
+    if isinstance(doc, dict):
+        for k, v in doc.iteritems():
+            if k in reffields:
+                for u in aslist(v):
+                    if not isinstance(u, basestring):
+                        continue
+                    p = os.path.join(base, u)
+                    with open(p) as f:
+                        deps = {
+                            "class": "File",
+                            "path": p
+                        }
+                        sf = scandeps(os.path.dirname(p), yaml.load(f), reffields, urlfields)
+                        if sf:
+                            deps["secondaryFiles"] = sf
+                        r.append(deps)
+            elif k in urlfields:
+                for u in aslist(v):
+                    p = os.path.join(base, u)
+                    r.append({
+                        "class": "File",
+                        "path": p
+                    })
+            else:
+                r.extend(scandeps(base, v, reffields, urlfields))
+    elif isinstance(doc, list):
+        for d in doc:
+            r.extend(scandeps(base, d, reffields, urlfields))
+    return r
