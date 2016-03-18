@@ -1,4 +1,7 @@
+MANIFEST.in
 README.rst
+ez_setup.py
+gittaggers.py
 setup.py
 cwltool/__init__.py
 cwltool/__main__.py
