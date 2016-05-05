@@ -1,6 +1,6 @@
 Source: cwltool
 Maintainer: Debian Med Packaging Team <debian-med-packaging@lists.alioth.debian.org>
-Uploaders: Michael R. Crusoe <crusoe@ucdavis.edu>
+Uploaders: Michael R. Crusoe <michael.crusoe@gmail.com>
 Section: science
 Priority: optional
 Build-Depends: debhelper (>= 9),
@@ -14,7 +14,7 @@ Build-Depends: debhelper (>= 9),
                python-html5lib,
                python-sparqlwrapper,
                help2man
-Standards-Version: 3.9.7
+Standards-Version: 3.9.8
 Vcs-Browser: https://anonscm.debian.org/cgit/debian-med/cwltool.git
 Vcs-Git: https://anonscm.debian.org/git/debian-med/cwltool.git
 Homepage: http://www.commonwl.org

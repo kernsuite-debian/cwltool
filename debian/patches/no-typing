@@ -1,0 +1,19 @@
+Author: Michael R. Crusoe <michael.crusoe@gmail.com>
+Description: Skip typing
+--- cwltool.orig/cwltool.egg-info/requires.txt
++++ cwltool/cwltool.egg-info/requires.txt
+@@ -4,4 +4,3 @@
+ rdflib-jsonld >= 0.3.0
+ shellescape
+ schema_salad == 1.7.20160316203940
+-typing
+--- cwltool.orig/setup.py
++++ cwltool/setup.py
+@@ -37,7 +37,6 @@
+           'rdflib-jsonld >= 0.3.0',
+           'shellescape',
+           'schema_salad == 1.7.20160316203940',
+-          'typing'
+         ],
+       test_suite='tests',
+       tests_require=[],

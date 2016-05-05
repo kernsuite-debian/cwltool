@@ -1,8 +1,8 @@
-cwltool (1.0.20160316204054-1) UNRELEASED; urgency=medium
+cwltool (1.0.20160504183010-1) UNRELEASED; urgency=medium
 
   * New upstream release 
 
- -- Michael R. Crusoe <crusoe@ucdavis.edu>  Fri, 18 Mar 2016 06:38:28 -0700
+ -- Michael R. Crusoe <michael.crusoe@gmail.com>  Thu, 05 May 2016 07:48:41 -0700
 
 cwltool (1.0.20160209222805-1) unstable; urgency=medium
 

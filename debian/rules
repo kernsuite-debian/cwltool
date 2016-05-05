@@ -9,6 +9,10 @@ export HOME=$(shell echo $$PWD"/fakehome")
 %:
 	dh $@ --with python2 --buildsystem=pybuild
 
+override_dh_auto_build:
+	find cwltool -name "*.py" | xargs sed -i 's/.*typing.*/#&/g'
+	dh_auto_build
+
 debian/cwltool.1: debian/rules debian/cwltool.help2man
 	python2 setup.py develop --user
 	#help2man cwltool/main.py -I debian/cwltool.help2man -N -n "Reference executor for Common Workflow Language" -o debian/cwltool.1
@@ -22,3 +26,4 @@ override_dh_installman: debian/cwltest.1 debian/cwltool.1
 override_dh_clean:
 	dh_clean
 	rm -f debian/cwltest.1 debian/cwltool.1
+	find cwltool -name "*.py" | xargs sed -i 's/#\(.*typing.*\)/\1/g'
