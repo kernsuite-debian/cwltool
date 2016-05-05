@@ -1,6 +1,6 @@
 Metadata-Version: 1.1
 Name: cwltool
-Version: 1.0.20160209222805
+Version: 1.0.20160504183010
 Summary: Common workflow language reference implementation
 Home-page: https://github.com/common-workflow-language/common-workflow-language
 Author: Common workflow language working group
@@ -10,6 +10,8 @@ Download-URL: https://github.com/common-workflow-language/common-workflow-langua
 Description: ==================================================================
         Common workflow language tool description reference implementation
         ==================================================================
+        
+        CWL Conformance test: |Build Status|
         
         This is the reference implementation of the Common Workflow Language.  It is
         intended to be feature complete and provide comprehensive validation of CWL
@@ -64,5 +66,8 @@ Description: ==================================================================
         and ``--tmp-outdir-prefix`` to somewhere under ``/Users``::
         
             $ cwl-runner --tmp-outdir-prefix=/Users/username/project --tmpdir-prefix=/Users/username/project wc-tool.cwl wc-job.json
+        
+        .. |Build Status| image:: https://ci.commonwl.org/buildStatus/icon?job=cwltool-conformance
+           :target: https://ci.commonwl.org/job/cwltool-conformance/
         
 Platform: UNKNOWN
