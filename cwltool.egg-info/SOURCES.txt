@@ -2,10 +2,10 @@ MANIFEST.in
 README.rst
 ez_setup.py
 gittaggers.py
+setup.cfg
 setup.py
 cwltool/__init__.py
 cwltool/__main__.py
-cwltool/aslist.py
 cwltool/builder.py
 cwltool/cwlrdf.py
 cwltool/cwltest.py
@@ -21,7 +21,9 @@ cwltool/main.py
 cwltool/pathmapper.py
 cwltool/process.py
 cwltool/sandboxjs.py
+cwltool/stdfsaccess.py
 cwltool/update.py
+cwltool/utils.py
 cwltool/workflow.py
 cwltool.egg-info/PKG-INFO
 cwltool.egg-info/SOURCES.txt

@@ -1,17 +1,22 @@
 import json
 import urlparse
+from schema_salad.ref_resolver import Loader
 from rdflib import Graph, plugin, URIRef
 from rdflib.serializer import Serializer
+from typing import Any, Union, Dict, IO
 
 def makerdf(workflow, wf, ctx):
+    # type: (str, Dict[str,Any], Loader.ContextType) -> Graph
     prefixes = {}
     for k,v in ctx.iteritems():
         if isinstance(v, dict):
-            v = v["@id"]
-        doc_url, frg = urlparse.urldefrag(v)
+            url = v["@id"]
+        else:
+            url = v
+        doc_url, frg = urlparse.urldefrag(url)
         if "/" in frg:
             p, _ = frg.split("/")
-            prefixes[p] = "%s#%s/" % (doc_url, p)
+            prefixes[p] = u"%s#%s/" % (doc_url, p)
 
     wf["@context"] = ctx
     g = Graph().parse(data=json.dumps(wf), format='json-ld', location=workflow)
@@ -20,15 +25,16 @@ def makerdf(workflow, wf, ctx):
     for s,p,o in g.triples((None, URIRef("@id"), None)):
         g.remove((s, p, o))
 
-    for k,v in prefixes.iteritems():
-        g.namespace_manager.bind(k, v)
+    for k2,v2 in prefixes.iteritems():
+        g.namespace_manager.bind(k2, v2)
 
     return g
 
-def printrdf(workflow, wf, ctx, sr):
-    print(makerdf(workflow, wf, ctx).serialize(format=sr))
+def printrdf(workflow, wf, ctx, sr, stdout):
+    # type: (str, Dict[str,Any], Loader.ContextType, str, IO[Any]) -> None
+    stdout.write(makerdf(workflow, wf, ctx).serialize(format=sr))
 
-def lastpart(uri):
+def lastpart(uri):  # type: (Any) -> str
     uri = str(uri)
     if "/" in uri:
         return uri[uri.rindex("/")+1:]
@@ -36,7 +42,7 @@ def lastpart(uri):
         return uri
 
 
-def dot_with_parameters(g):
+def dot_with_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
     qres = g.query(
         """SELECT ?step ?run ?runtype
            WHERE {
@@ -45,7 +51,7 @@ def dot_with_parameters(g):
            }""")
 
     for step, run, runtype in qres:
-        print '"%s" [label="%s"]' % (lastpart(step), "%s (%s)" % (lastpart(step), lastpart(run)))
+        stdout.write(u'"%s" [label="%s"]\n' % (lastpart(step), "%s (%s)" % (lastpart(step), lastpart(run))))
 
     qres = g.query(
         """SELECT ?step ?inp ?source
@@ -56,9 +62,9 @@ def dot_with_parameters(g):
            }""")
 
     for step, inp, source in qres:
-        print '"%s" [shape=box]' % (lastpart(inp))
-        print '"%s" -> "%s" [label="%s"]' % (lastpart(source), lastpart(inp), "")
-        print '"%s" -> "%s" [label="%s"]' % (lastpart(inp), lastpart(step), "")
+        stdout.write(u'"%s" [shape=box]\n' % (lastpart(inp)))
+        stdout.write(u'"%s" -> "%s" [label="%s"]\n' % (lastpart(source), lastpart(inp), ""))
+        stdout.write(u'"%s" -> "%s" [label="%s"]\n' % (lastpart(inp), lastpart(step), ""))
 
     qres = g.query(
         """SELECT ?step ?out
@@ -68,8 +74,8 @@ def dot_with_parameters(g):
            }""")
 
     for step, out in qres:
-        print '"%s" [shape=box]' % (lastpart(out))
-        print '"%s" -> "%s" [label="%s"]' % (lastpart(step), lastpart(out), "")
+        stdout.write(u'"%s" [shape=box]\n' % (lastpart(out)))
+        stdout.write(u'"%s" -> "%s" [label="%s"]\n' % (lastpart(step), lastpart(out), ""))
 
     qres = g.query(
         """SELECT ?out ?source
@@ -79,8 +85,8 @@ def dot_with_parameters(g):
            }""")
 
     for out, source in qres:
-        print '"%s" [shape=octagon]' % (lastpart(out))
-        print '"%s" -> "%s" [label="%s"]' % (lastpart(source), lastpart(out), "")
+        stdout.write(u'"%s" [shape=octagon]\n' % (lastpart(out)))
+        stdout.write(u'"%s" -> "%s" [label="%s"]\n' % (lastpart(source), lastpart(out), ""))
 
     qres = g.query(
         """SELECT ?inp
@@ -90,13 +96,13 @@ def dot_with_parameters(g):
            }""")
 
     for (inp,) in qres:
-        print '"%s" [shape=octagon]' % (lastpart(inp))
+        stdout.write(u'"%s" [shape=octagon]\n' % (lastpart(inp)))
 
-def dot_without_parameters(g):
-    dotname = {}
+def dot_without_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
+    dotname = {}  # type: Dict[str,str]
     clusternode = {}
 
-    print "compound=true"
+    stdout.write("compound=true\n")
 
     subworkflows = set()
     qres = g.query(
@@ -126,21 +132,21 @@ def dot_without_parameters(g):
 
         if wf != currentwf:
             if currentwf is not None:
-                print "}"
+                stdout.write("}\n")
             if wf in subworkflows:
                 if wf not in dotname:
                     dotname[wf] = "cluster_" + lastpart(wf)
-                print 'subgraph "%s" { label="%s"' % (dotname[wf], lastpart(wf))
+                stdout.write(u'subgraph "%s" { label="%s"\n' % (dotname[wf], lastpart(wf)))
                 currentwf = wf
                 clusternode[wf] = step
             else:
                 currentwf = None
 
         if str(runtype) != "https://w3id.org/cwl/cwl#Workflow":
-            print '"%s" [label="%s"]' % (dotname[step], urlparse.urldefrag(str(step))[1])
+            stdout.write(u'"%s" [label="%s"]\n' % (dotname[step], urlparse.urldefrag(str(step))[1]))
 
     if currentwf is not None:
-        print "}\n"
+        stdout.write("}\n")
 
     qres = g.query(
         """SELECT DISTINCT ?src ?sink ?srcrun ?sinkrun
@@ -155,26 +161,27 @@ def dot_without_parameters(g):
            }""")
 
     for src, sink, srcrun, sinkrun in qres:
-        attr = ""
+        attr = u""
         if srcrun in clusternode:
-            attr += 'ltail="%s"' % dotname[srcrun]
+            attr += u'ltail="%s"' % dotname[srcrun]
             src = clusternode[srcrun]
         if sinkrun in clusternode:
-            attr += ' lhead="%s"' % dotname[sinkrun]
+            attr += u' lhead="%s"' % dotname[sinkrun]
             sink = clusternode[sinkrun]
-        print '"%s" -> "%s" [%s]' % (dotname[src], dotname[sink], attr)
+        stdout.write(u'"%s" -> "%s" [%s]\n' % (dotname[src], dotname[sink], attr))
 
 
-def printdot(workflow, wf, ctx, include_parameters=False):
+def printdot(workflow, wf, ctx, stdout, include_parameters=False):
+    # type: (str, Dict[str,Any], Loader.ContextType, Any, bool) -> None
     g = makerdf(workflow, wf, ctx)
 
-    print "digraph {"
+    stdout.write("digraph {")
 
     #g.namespace_manager.qname(predicate)
 
     if include_parameters:
-        dot_with_parmeters(g)
+        dot_with_parameters(g, stdout)
     else:
-        dot_without_parameters(g)
+        dot_without_parameters(g, stdout)
 
-    print "}"
+    stdout.write("}")
