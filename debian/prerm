@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+	remove)
+		update-alternatives --remove cwl-runner /usr/bin/cwltool
+		;;
+
+	upgrade|failed-upgrade|deconfigure)
+		;;
+
+esac
+
+#DEBHELPER#

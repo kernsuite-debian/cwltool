@@ -2,6 +2,7 @@ cwltool (1.0.20170114120503-1) unstable; urgency=medium
 
   * Team upload.
   * New upstream release.
+  * Add cwltool as an alternative implementation for cwl-runner.
 
  -- Sascha Steinbiss <satta@debian.org>  Sat, 14 Jan 2017 12:49:30 +0000
 
