@@ -11,8 +11,10 @@ cwltool (1.0.20161207161158-1) UNRELEASED; urgency=medium
   * d/watch: version=4
   * debhelper 10
   * Add python-typing as Build-Depends and comment patch to skip it
+  * Do not try to create manpage for removed tool cwltest
+  * Remove empty template for upstream metadata
 
- -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 10:33:42 +0100
+ -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 11:12:23 +0100
 
 cwltool (1.0.20160209222805-1) unstable; urgency=medium
 
