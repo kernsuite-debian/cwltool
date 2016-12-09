@@ -1,41 +1,27 @@
 import json
 import urlparse
+from .process import Process
 from schema_salad.ref_resolver import Loader
+from schema_salad.jsonld_context import makerdf
 from rdflib import Graph, plugin, URIRef
 from rdflib.serializer import Serializer
-from typing import Any, Union, Dict, IO
+from typing import Any, Dict, IO, Text, Union
 
-def makerdf(workflow, wf, ctx):
-    # type: (str, Dict[str,Any], Loader.ContextType) -> Graph
-    prefixes = {}
-    for k,v in ctx.iteritems():
-        if isinstance(v, dict):
-            url = v["@id"]
-        else:
-            url = v
-        doc_url, frg = urlparse.urldefrag(url)
-        if "/" in frg:
-            p, _ = frg.split("/")
-            prefixes[p] = u"%s#%s/" % (doc_url, p)
+def gather(tool, ctx):  # type: (Process, Loader.ContextType) -> Graph
+    g = Graph()
 
-    wf["@context"] = ctx
-    g = Graph().parse(data=json.dumps(wf), format='json-ld', location=workflow)
+    def visitor(t):
+        makerdf(t["id"], t, ctx, graph=g)
 
-    # Bug in json-ld loader causes @id fields to be added to the graph
-    for s,p,o in g.triples((None, URIRef("@id"), None)):
-        g.remove((s, p, o))
-
-    for k2,v2 in prefixes.iteritems():
-        g.namespace_manager.bind(k2, v2)
-
+    tool.visit(visitor)
     return g
 
-def printrdf(workflow, wf, ctx, sr, stdout):
-    # type: (str, Dict[str,Any], Loader.ContextType, str, IO[Any]) -> None
-    stdout.write(makerdf(workflow, wf, ctx).serialize(format=sr))
+def printrdf(wf, ctx, sr, stdout):
+    # type: (Process, Loader.ContextType, Text, IO[Any]) -> None
+    stdout.write(gather(wf, ctx).serialize(format=sr))
 
-def lastpart(uri):  # type: (Any) -> str
-    uri = str(uri)
+def lastpart(uri):  # type: (Any) -> Text
+    uri = Text(uri)
     if "/" in uri:
         return uri[uri.rindex("/")+1:]
     else:
@@ -99,7 +85,7 @@ def dot_with_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
         stdout.write(u'"%s" [shape=octagon]\n' % (lastpart(inp)))
 
 def dot_without_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
-    dotname = {}  # type: Dict[str,str]
+    dotname = {}  # type: Dict[Text,Text]
     clusternode = {}
 
     stdout.write("compound=true\n")
@@ -142,8 +128,8 @@ def dot_without_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
             else:
                 currentwf = None
 
-        if str(runtype) != "https://w3id.org/cwl/cwl#Workflow":
-            stdout.write(u'"%s" [label="%s"]\n' % (dotname[step], urlparse.urldefrag(str(step))[1]))
+        if Text(runtype) != "https://w3id.org/cwl/cwl#Workflow":
+            stdout.write(u'"%s" [label="%s"]\n' % (dotname[step], urlparse.urldefrag(Text(step))[1]))
 
     if currentwf is not None:
         stdout.write("}\n")
@@ -153,9 +139,9 @@ def dot_without_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
            WHERE {
               ?wf1 Workflow:steps ?src .
               ?wf2 Workflow:steps ?sink .
-              ?src cwl:outputs ?out .
+              ?src cwl:out ?out .
               ?inp cwl:source ?out .
-              ?sink cwl:inputs ?inp .
+              ?sink cwl:in ?inp .
               ?src cwl:run ?srcrun .
               ?sink cwl:run ?sinkrun .
            }""")
@@ -171,9 +157,9 @@ def dot_without_parameters(g, stdout):  # type: (Graph, IO[Any]) -> None
         stdout.write(u'"%s" -> "%s" [%s]\n' % (dotname[src], dotname[sink], attr))
 
 
-def printdot(workflow, wf, ctx, stdout, include_parameters=False):
-    # type: (str, Dict[str,Any], Loader.ContextType, Any, bool) -> None
-    g = makerdf(workflow, wf, ctx)
+def printdot(wf, ctx, stdout, include_parameters=False):
+    # type: (Process, Loader.ContextType, Any, bool) -> None
+    g = gather(wf, ctx)
 
     stdout.write("digraph {")
 

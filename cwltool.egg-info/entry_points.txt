@@ -1,4 +1,3 @@
 [console_scripts]
-cwltest = cwltool.cwltest:main
 cwltool = cwltool.main:main
 
