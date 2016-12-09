@@ -1,8 +1,14 @@
 cwltool (1.0.20160504183010-1) UNRELEASED; urgency=medium
 
+  * Team upload
+
+  [ Michael R. Crusoe ]
   * New upstream release 
 
- -- Michael R. Crusoe <michael.crusoe@gmail.com>  Thu, 05 May 2016 07:48:41 -0700
+  [ Andreas Tille ]
+  * Add missing Build-Depends: python-keepalive
+
+ -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 10:26:39 +0100
 
 cwltool (1.0.20160209222805-1) unstable; urgency=medium
 
