@@ -14,6 +14,7 @@ Build-Depends: debhelper (>= 10),
                python-html5lib,
                python-sparqlwrapper,
                python-keepalive,
+               python-typing,
                help2man
 Standards-Version: 3.9.8
 Vcs-Browser: https://anonscm.debian.org/cgit/debian-med/cwltool.git
