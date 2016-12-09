@@ -7,10 +7,11 @@ cwltool (1.0.20161207161158-1) UNRELEASED; urgency=medium
 
   [ Andreas Tille ]
   * Add missing Build-Depends: python-keepalive
+    Closes: #845982
   * d/watch: version=4
   * debhelper 10
 
- -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 10:26:39 +0100
+ -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 10:33:42 +0100
 
 cwltool (1.0.20160209222805-1) unstable; urgency=medium
 
