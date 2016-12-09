@@ -1,4 +1,4 @@
-cwltool (1.0.20160504183010-1) UNRELEASED; urgency=medium
+cwltool (1.0.20161207161158-1) UNRELEASED; urgency=medium
 
   * Team upload
 
@@ -7,6 +7,7 @@ cwltool (1.0.20160504183010-1) UNRELEASED; urgency=medium
 
   [ Andreas Tille ]
   * Add missing Build-Depends: python-keepalive
+  * d/watch: version=4
 
  -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 10:26:39 +0100
 
