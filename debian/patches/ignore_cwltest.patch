@@ -1,0 +1,18 @@
+Author: Andreas Tille <tille@debian.org>
+Last-Update: Sun, 18 Dec 2016 08:31:42 +0100
+Description: Ignore cwltest for the moment
+ See the hint in
+   https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=845982#62
+
+--- a/setup.py
++++ b/setup.py
+@@ -48,8 +48,7 @@ setup(name='cwltool',
+           'rdflib >= 4.2.0, < 4.3.0',
+           'shellescape',
+           'schema-salad >= 1.21.20161206204028, < 2',
+-          'typing >= 3.5.2',
+-          'cwltest >= 1.0.20160907111242'],
++          'typing >= 3.5.2'],
+       test_suite='tests',
+       tests_require=[],
+       entry_points={
