@@ -15,6 +15,7 @@ Build-Depends: debhelper (>= 10),
                python-sparqlwrapper,
                python-keepalive,
                python-typing,
+               python-ruamel.yaml (>=0.12.4),
                help2man
 Standards-Version: 3.9.8
 Vcs-Browser: https://anonscm.debian.org/cgit/debian-med/cwltool.git
