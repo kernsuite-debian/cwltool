@@ -18,7 +18,7 @@ import requests
 from typing import (Union, Any, AnyStr, cast, Callable, Dict, Sequence, Text,
     Tuple, Type, IO)
 
-from schema_salad.ref_resolver import Loader, Fetcher
+from schema_salad.ref_resolver import Loader, Fetcher, file_uri, uri_file_path
 import schema_salad.validate as validate
 import schema_salad.jsonld_context
 import schema_salad.makedoc
@@ -165,9 +165,9 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
                         help="Will be passed to `docker run` as the '--net' "
                         "parameter. Implies '--enable-net'.")
 
-    parser.add_argument("--on-error", type=Text,
+    parser.add_argument("--on-error", type=str,
                         help="Desired workflow behavior when a step fails.  One of 'stop' or 'continue'. "
-                        "Default is 'stop.", default="stop")
+                        "Default is 'stop'.", default="stop", choices=("stop", "continue"))
 
     exgroup = parser.add_mutually_exclusive_group()
     exgroup.add_argument("--compute-checksum", action="store_true", default=True,
@@ -187,16 +187,12 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
 
 
 def single_job_executor(t, job_order_object, **kwargs):
-    # type: (Process, Dict[Text, Any], **Any) -> Union[Text, Dict[Text, Text]]
+    # type: (Process, Dict[Text, Any], **Any) -> Tuple[Dict[Text, Any], Text]
     final_output = []
     final_status = []
 
     def output_callback(out, processStatus):
         final_status.append(processStatus)
-        if processStatus == "success":
-            _logger.info(u"Final process status is %s", processStatus)
-        else:
-            _logger.warn(u"Final process status is %s", processStatus)
         final_output.append(out)
 
     if "basedir" not in kwargs:
@@ -223,30 +219,30 @@ def single_job_executor(t, job_order_object, **kwargs):
 
     try:
         for r in jobiter:
-            if r.outdir:
-                output_dirs.add(r.outdir)
-
             if r:
+                if r.outdir:
+                    output_dirs.add(r.outdir)
                 r.run(**kwargs)
             else:
-                raise WorkflowException("Workflow cannot make any more progress.")
+                _logger.error("Workflow cannot make any more progress.")
+                break
     except WorkflowException:
         raise
     except Exception as e:
         _logger.exception("Got workflow error")
         raise WorkflowException(Text(e))
 
-    if final_status[0] != "success":
-        raise WorkflowException(u"Process status is %s" % (final_status))
-
-    if final_output[0] and finaloutdir:
+    if final_output and final_output[0] and finaloutdir:
         final_output[0] = relocateOutputs(final_output[0], finaloutdir,
                                           output_dirs, kwargs.get("move_outputs"))
 
     if kwargs.get("rm_tmpdir"):
         cleanIntermediate(output_dirs)
 
-    return final_output[0]
+    if final_output and final_status:
+        return (final_output[0], final_status[0])
+    else:
+        return (None, "permanentFail")
 
 class FSAction(argparse.Action):
     objclass = None  # type: Text
@@ -262,7 +258,7 @@ class FSAction(argparse.Action):
         setattr(namespace,
             self.dest,  # type: ignore
             {"class": self.objclass,
-             "location": "file://%s" % os.path.abspath(cast(AnyStr, values))})
+             "location": file_uri(str(os.path.abspath(cast(AnyStr, values))))})
 
 class FSAppendAction(argparse.Action):
     objclass = None  # type: Text
@@ -285,7 +281,7 @@ class FSAppendAction(argparse.Action):
                     g)
         g.append(
             {"class": self.objclass,
-             "location": "file://%s" % os.path.abspath(cast(AnyStr, values))})
+             "location": file_uri(str(os.path.abspath(cast(AnyStr, values))))})
 
 class FileAction(FSAction):
     objclass = "File"
@@ -475,7 +471,7 @@ def load_job_order(args, t, stdin, print_input_deps=False, relative_deps=False,
 
     if print_input_deps:
         printdeps(job_order_object, loader, stdout, relative_deps, "",
-                  basedir=u"file://%s/" % input_basedir)
+                  basedir=file_uri(input_basedir+"/"))
         return 0
 
     def pathToLoc(p):
@@ -502,7 +498,7 @@ def makeRelative(base, ob):
         pass
     else:
         if u.startswith("file://"):
-            u = u[7:]
+            u = uri_file_path(u)
         ob["location"] = os.path.relpath(u, base)
 
 def printdeps(obj, document_loader, stdout, relative_deps, uri, basedir=None):
@@ -523,7 +519,7 @@ def printdeps(obj, document_loader, stdout, relative_deps, uri, basedir=None):
         if relative_deps == "primary":
             base = basedir if basedir else os.path.dirname(uri)
         elif relative_deps == "cwd":
-            base = "file://" + os.getcwd()
+            base = file_uri(os.getcwd())
         else:
             raise Exception(u"Unknown relative_deps %s" % relative_deps)
 
@@ -551,7 +547,7 @@ def versionstring():
 
 def main(argsl=None,  # type: List[str]
          args=None,   # type: argparse.Namespace
-         executor=single_job_executor,  # type: Callable[..., Union[Text, Dict[Text, Text]]]
+         executor=single_job_executor,  # type: Callable[..., Tuple[Dict[Text, Any], Text]]
          makeTool=workflow.defaultMakeTool,  # type: Callable[..., Process]
          selectResources=None,  # type: Callable[[Dict[Text, int]], Dict[Text, int]]
          stdin=sys.stdin,  # type: IO[Any]
@@ -561,12 +557,16 @@ def main(argsl=None,  # type: List[str]
          job_order_object=None,  # type: Union[Tuple[Dict[Text, Any], Text], int]
          make_fs_access=StdFsAccess,  # type: Callable[[Text], StdFsAccess]
          fetcher_constructor=None,  # type: Callable[[Dict[unicode, unicode], requests.sessions.Session], Fetcher]
-         resolver=tool_resolver
+         resolver=tool_resolver,
+         logger_handler=None
          ):
     # type: (...) -> int
 
     _logger.removeHandler(defaultStreamHandler)
-    stderr_handler = logging.StreamHandler(stderr)
+    if logger_handler:
+        stderr_handler = logger_handler
+    else:
+        stderr_handler = logging.StreamHandler(stderr)
     _logger.addHandler(stderr_handler)
     try:
         if args is None:
@@ -598,7 +598,8 @@ def main(argsl=None,  # type: List[str]
                     'job_order': None,
                     'pack': False,
                     'on_error': 'continue',
-                    'relax_path_checks': False}.iteritems():
+                    'relax_path_checks': False,
+                    'validate': False}.iteritems():
             if not hasattr(args, k):
                 setattr(args, k, v)
 
@@ -709,7 +710,7 @@ def main(argsl=None,  # type: List[str]
             setattr(args, 'basedir', job_order_object[1])
             del args.workflow
             del args.job_order
-            out = executor(tool, job_order_object[0],
+            (out, status) = executor(tool, job_order_object[0],
                            makeTool=makeTool,
                            select_resources=selectResources,
                            make_fs_access=make_fs_access,
@@ -719,7 +720,7 @@ def main(argsl=None,  # type: List[str]
             if out is not None:
                 def locToPath(p):
                     if p["location"].startswith("file://"):
-                        p["path"] = p["location"][7:]
+                        p["path"] = uri_file_path(p["location"])
 
                 adjustDirObjs(out, locToPath)
                 adjustFileObjs(out, locToPath)
@@ -730,8 +731,14 @@ def main(argsl=None,  # type: List[str]
                     stdout.write(json.dumps(out, indent=4))
                 stdout.write("\n")
                 stdout.flush()
-            else:
+
+            if status != "success":
+                _logger.warn(u"Final process status is %s", status)
                 return 1
+            else:
+                _logger.info(u"Final process status is %s", status)
+                return 0
+
         except (validate.ValidationException) as exc:
             _logger.error(u"Input object failed validation:\n%s", exc,
                     exc_info=args.debug)
