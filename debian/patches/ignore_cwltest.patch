@@ -4,15 +4,13 @@ Description: Ignore cwltest for the moment
  See the hint in
    https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=845982#62
 
---- a/setup.py
-+++ b/setup.py
-@@ -48,8 +48,7 @@ setup(name='cwltool',
-           'rdflib >= 4.2.0, < 4.3.0',
-           'shellescape',
-           'schema-salad >= 1.21.20161206204028, < 2',
--          'typing >= 3.5.2',
--          'cwltest >= 1.0.20160907111242'],
-+          'typing >= 3.5.2'],
+--- cwltool.orig/setup.py
++++ cwltool/setup.py
+@@ -49,7 +49,6 @@
+           'shellescape >= 3.4.1, < 3.5',
+           'schema-salad >= 2.2.20170111180227, < 3',
+           'typing >= 3.5.2, < 3.6',
+-          'cwltest >= 1.0.20161227194859'
+       ],
        test_suite='tests',
        tests_require=[],
-       entry_points={
