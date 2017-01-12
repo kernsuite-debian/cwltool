@@ -12,6 +12,7 @@ cwltool (1.0.20161216212910-1) UNRELEASED; urgency=medium
   * debhelper 10
   * Add python-typing as Build-Depends and comment patch to skip it
   * Do not try to create manpage for removed tool cwltest
+    Closes: #848809
   * Remove empty template for upstream metadata
   * Add Build-Depends: python-ruamel.yaml (>=0.12.4)
 
