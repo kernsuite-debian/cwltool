@@ -12,7 +12,7 @@ from ruamel.yaml.comments import CommentedSeq, CommentedMap
 from avro.schema import Names
 import requests.sessions
 
-from schema_salad.ref_resolver import Loader, Fetcher
+from schema_salad.ref_resolver import Loader, Fetcher, file_uri
 import schema_salad.validate as validate
 from schema_salad.validate import ValidationException
 import schema_salad.schema as schema
@@ -42,7 +42,7 @@ def fetch_document(argsworkflow,   # type: Union[Text, dict[Text, Any]]
         if split.scheme:
             uri = argsworkflow
         elif os.path.exists(os.path.abspath(argsworkflow)):
-            uri = "file://" + os.path.abspath(argsworkflow)
+            uri = file_uri(str(os.path.abspath(argsworkflow)))
         elif resolver:
             uri = resolver(document_loader, argsworkflow)
 
