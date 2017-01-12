@@ -1,0 +1,24 @@
+Bug-Database: https://github.com/common-workflow-language/cwltool/issues
+Bug-Submit: https://github.com/common-workflow-languages/cwltool/issues/new
+Cite-As: |
+  Amstutz, Peter; Crusoe, Michael R.; Tijanić, Nebojša; Chapman, Brad; Chilton,
+  John; Heuer, Michael; Kartashov, Andrey; Leehr, Dan; Ménager, Hervé;
+  Nedeljkovich, Maya; Scales, Matt; Soiland-Reyes, Stian; Stojanovic, Luka
+  (2016): Common Workflow Language, v1.0. figshare.
+  https://dx.doi.org/10.6084/m9.figshare.3115156.v2
+Contact: common-workflow-language@googlegroups.com
+Name: cwltool
+Reference:
+- Author: >
+    Peter Amstutz and Michael R. Crusoe and Nebojša Tijanić and Brad Chapman
+    and John Chilton and Michael Heuer and Andrey Kartashov and Dan Leehr and
+    Hervé Ménager and Maya Nedeljkovich and Matt Scales and Stian Soiland-Reyes
+    and Luka Stojanovic
+  Title: "Common Workflow Language,  v1.0"
+  Publisher: Figshare
+  Year: 2016
+  DOI: 10.6084/m9.figshare.3115156.v2
+  URL: http://dx.doi.org/10.6084/m9.figshare.3115156.v2
+  Type: article
+Repository-Browse: https://github.com/common-workflow-language/cwltool
+Repository: https://github.com/common-workflow-language/cwltool.git
