@@ -1,4 +1,4 @@
-cwltool (1.0.20170111193653-1) UNRELEASED; urgency=medium
+cwltool (1.0.20170111193653-1) unstable; urgency=medium
 
   * Team upload
 
@@ -16,7 +16,7 @@ cwltool (1.0.20170111193653-1) UNRELEASED; urgency=medium
   * Remove empty template for upstream metadata
   * Add Build-Depends: python-ruamel.yaml (>=0.12.4)
 
- -- Andreas Tille <tille@debian.org>  Fri, 09 Dec 2016 11:12:23 +0100
+ -- Michael R. Crusoe <michael.crusoe@gmail.com>  Thu, 12 Jan 2017 21:29:55 -0800
 
 cwltool (1.0.20160209222805-1) unstable; urgency=medium
 
