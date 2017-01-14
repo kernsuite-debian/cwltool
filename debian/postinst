@@ -2,6 +2,6 @@
 set -e
 
 update-alternatives --quiet --install /usr/bin/cwl-runner cwl-runner \
-	/usr/bin/cwltool 1
+	/usr/bin/cwltool 50
 
 #DEBHELPER#
