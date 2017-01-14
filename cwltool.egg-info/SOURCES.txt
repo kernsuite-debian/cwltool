@@ -1,6 +1,7 @@
 MANIFEST.in
 Makefile
 README.rst
+cwltool.py
 ez_setup.py
 gittaggers.py
 setup.cfg
@@ -33,7 +34,6 @@ cwltool.egg-info/PKG-INFO
 cwltool.egg-info/SOURCES.txt
 cwltool.egg-info/dependency_links.txt
 cwltool.egg-info/entry_points.txt
-cwltool.egg-info/pbr.json
 cwltool.egg-info/requires.txt
 cwltool.egg-info/top_level.txt
 cwltool.egg-info/zip-safe
