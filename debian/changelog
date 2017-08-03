@@ -1,3 +1,10 @@
+cwltool (1.0.20170114120503-2) UNRELEASED; urgency=medium
+
+  * debian/upstream/metadata: Added refs to registry databases,
+    to RRID SCR_015528 in particular
+
+ -- Steffen Moeller <moeller@debian.org>  Thu, 03 Aug 2017 16:08:37 +0200
+
 cwltool (1.0.20170114120503-1) unstable; urgency=medium
 
   * Team upload.

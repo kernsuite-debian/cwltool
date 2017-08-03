@@ -22,3 +22,10 @@ Reference:
   Type: article
 Repository-Browse: https://github.com/common-workflow-language/cwltool
 Repository: https://github.com/common-workflow-language/cwltool.git
+Registry:
+  - Name: RRID
+    Entry: SCR_015528
+  - Name: OMICtools
+    Entry: NA
+  - Name; bio.tools
+    Entry: NA
