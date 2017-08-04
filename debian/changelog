@@ -1,4 +1,4 @@
-cwltool (1.0.20170114120503-2) UNRELEASED; urgency=medium
+cwltool (1.0.20170803160545-1) UNRELEASED; urgency=medium
 
   [ Steffen Moeller ]
   * debian/upstream/metadata: Added refs to registry databases,
@@ -10,7 +10,11 @@ cwltool (1.0.20170114120503-2) UNRELEASED; urgency=medium
   * Add missing build-dep on python-avro.
   * Relax version requirement for python-typing.
 
- -- Steffen Moeller <moeller@debian.org>  Thu, 03 Aug 2017 16:08:37 +0200
+  [ Michael R. Crusoe ]
+  * New upstream release.
+  * Bump standards to 4.0.0
+
+ -- Michael R. Crusoe <michael.crusoe@gmail.com>  Fri, 04 Aug 2017 05:03:10 -0700
 
 cwltool (1.0.20170114120503-1) unstable; urgency=medium
 
