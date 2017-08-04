@@ -1,40 +1,54 @@
-import shutil
-from functools import partial
-import json
+from __future__ import absolute_import
 import copy
-import os
-import glob
-import logging
 import hashlib
+import json
+import logging
+import os
 import re
-import urlparse
+import shutil
 import tempfile
-import errno
+from functools import partial
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Text, Union, cast
 
-import avro.schema
+from six import string_types, u
+
 import schema_salad.validate as validate
-from schema_salad.ref_resolver import file_uri, uri_file_path
 import shellescape
-from typing import Any, Callable, cast, Generator, Text, Union
-
-from .process import Process, shortname, uniquename, getListing, normalizeFilesDirs, compute_checksums
-from .errors import WorkflowException
-from .utils import aslist
-from . import expression
-from .builder import CONTENT_LIMIT, substitute, Builder, adjustFileObjs, adjustDirObjs
-from .pathmapper import PathMapper
-from .job import CommandLineJob
-from .stdfsaccess import StdFsAccess
-
+from schema_salad.ref_resolver import file_uri, uri_file_path
 from schema_salad.sourceline import SourceLine, indent
+from six.moves import urllib
+
+from .builder import CONTENT_LIMIT, Builder, substitute
+from .errors import WorkflowException
+from .flatten import flatten
+from .job import CommandLineJob, DockerCommandLineJob, JobBase
+from .pathmapper import (PathMapper, adjustDirObjs, adjustFileObjs,
+                         get_listing, trim_listing, visit_class)
+from .process import (Process, UnsupportedRequirement,
+                      _logger_validation_warnings, compute_checksums,
+                      normalizeFilesDirs, shortname, uniquename)
+from .stdfsaccess import StdFsAccess
+from .utils import aslist, docker_windows_path_adjust, convert_pathsep_to_unix, windows_default_container_id, onWindows
+from six.moves import map
 
 ACCEPTLIST_EN_STRICT_RE = re.compile(r"^[a-zA-Z0-9._+-]+$")
-ACCEPTLIST_EN_RELAXED_RE = re.compile(r"^[ a-zA-Z0-9._+-]+$")  # with spaces
+ACCEPTLIST_EN_RELAXED_RE = re.compile(r".*")  # Accept anything
 ACCEPTLIST_RE = ACCEPTLIST_EN_STRICT_RE
+DEFAULT_CONTAINER_MSG="""We are on Microsoft Windows and not all components of this CWL description have a
+container specified. This means that these steps will be executed in the default container, 
+which is %s.
 
-from .flatten import flatten
+Note, this could affect portability if this CWL description relies on non-POSIX features
+or commands in this container. For best results add the following to your CWL
+description's hints section:
+
+hints:
+  DockerRequirement:
+    dockerPull: %s
+"""
 
 _logger = logging.getLogger("cwltool")
+
 
 class ExpressionTool(Process):
     def __init__(self, toolpath_object, **kwargs):
@@ -59,18 +73,22 @@ class ExpressionTool(Process):
                 normalizeFilesDirs(ev)
                 self.output_callback(ev, "success")
             except Exception as e:
-                _logger.warn(u"Failed to evaluate expression:\n%s",
-                        e, exc_info=kwargs.get('debug'))
+                _logger.warning(u"Failed to evaluate expression:\n%s",
+                             e, exc_info=kwargs.get('debug'))
                 self.output_callback({}, "permanentFail")
 
-    def job(self, joborder, output_callback, **kwargs):
-        # type: (Dict[Text, Text], Callable[[Any, Any], Any], **Any) -> Generator[ExpressionTool.ExpressionJob, None, None]
-        builder = self._init_job(joborder, **kwargs)
+    def job(self,
+            job_order,  # type: Dict[Text, Text]
+            output_callbacks,  # type: Callable[[Any, Any], Any]
+            **kwargs  # type: Any
+            ):
+        # type: (...) -> Generator[ExpressionTool.ExpressionJob, None, None]
+        builder = self._init_job(job_order, **kwargs)
 
         j = ExpressionTool.ExpressionJob()
         j.builder = builder
         j.script = self.tool["expression"]
-        j.output_callback = output_callback
+        j.output_callback = output_callbacks
         j.requirements = self.requirements
         j.hints = self.hints
         j.outdir = None
@@ -83,6 +101,7 @@ def remove_path(f):  # type: (Dict[Text, Any]) -> None
     if "path" in f:
         del f["path"]
 
+
 def revmap_file(builder, outdir, f):
     # type: (Builder, Text, Dict[Text, Any]) -> Union[Dict[Text, Any], None]
 
@@ -93,18 +112,21 @@ def revmap_file(builder, outdir, f):
     internal output directories to the external directory.
     """
 
-    split = urlparse.urlsplit(outdir)
+    split = urllib.parse.urlsplit(outdir)
     if not split.scheme:
         outdir = file_uri(str(outdir))
 
     if "location" in f:
         if f["location"].startswith("file://"):
-            path = uri_file_path(f["location"])
+            path = convert_pathsep_to_unix(uri_file_path(f["location"]))
             revmap_f = builder.pathmapper.reversemap(path)
-            if revmap_f:
-                f["location"] = revmap_f[1]
+            if revmap_f and not builder.pathmapper.mapper(revmap_f[0]).type.startswith("Writable"):
+                f["basename"] = os.path.basename(path)
+                f["location"] = revmap_f[0]
+            elif path == builder.outdir:
+                f["location"] = outdir
             elif path.startswith(builder.outdir):
-                f["location"] = builder.fs_access.join(outdir, path[len(builder.outdir)+1:])
+                f["location"] = builder.fs_access.join(outdir, path[len(builder.outdir) + 1:])
         return f
 
     if "path" in f:
@@ -115,10 +137,11 @@ def revmap_file(builder, outdir, f):
             f["location"] = revmap_f[1]
             return f
         elif path.startswith(builder.outdir):
-            f["location"] = builder.fs_access.join(outdir, path[len(builder.outdir)+1:])
+            f["location"] = builder.fs_access.join(outdir, path[len(builder.outdir) + 1:])
             return f
         else:
-            raise WorkflowException(u"Output file path %s must be within designated output directory (%s) or an input file pass through." % (path, builder.outdir))
+            raise WorkflowException(u"Output file path %s must be within designated output directory (%s) or an input "
+                                    u"file pass through." % (path, builder.outdir))
 
     raise WorkflowException(u"Output File object is missing both `location` and `path` fields: %s" % f)
 
@@ -139,11 +162,13 @@ class CallbackJob(object):
             self.outdir,
             kwargs.get("compute_checksum", True)), "success")
 
+
 # map files to assigned path inside a container. We need to also explicitly
 # walk over input as implicit reassignment doesn't reach everything in builder.bindings
 def check_adjust(builder, f):
     # type: (Builder, Dict[Text, Any]) -> Dict[Text, Any]
-    f["path"] = builder.pathmapper.mapper(f["location"])[1]
+
+    f["path"] = docker_windows_path_adjust(builder.pathmapper.mapper(f["location"])[1])
     f["dirname"], f["basename"] = os.path.split(f["path"])
     if f["class"] == "File":
         f["nameroot"], f["nameext"] = os.path.splitext(f["basename"])
@@ -151,21 +176,65 @@ def check_adjust(builder, f):
         raise WorkflowException("Invalid filename: '%s' contains illegal characters" % (f["basename"]))
     return f
 
+def check_valid_locations(fs_access, ob):
+    if ob["location"].startswith("_:"):
+        pass
+    if ob["class"] == "File" and not fs_access.isfile(ob["location"]):
+        raise validate.ValidationException("Does not exist or is not a File: '%s'" % ob["location"])
+    if ob["class"] == "Directory" and not fs_access.isdir(ob["location"]):
+        raise validate.ValidationException("Does not exist or is not a Directory: '%s'" % ob["location"])
+
 class CommandLineTool(Process):
     def __init__(self, toolpath_object, **kwargs):
         # type: (Dict[Text, Any], **Any) -> None
         super(CommandLineTool, self).__init__(toolpath_object, **kwargs)
+        self.find_default_container = kwargs.get("find_default_container", None)
 
-    def makeJobRunner(self):  # type: () -> CommandLineJob
-        return CommandLineJob()
+    def makeJobRunner(self, use_container=True):  # type: (Optional[bool]) -> JobBase
+        dockerReq, _ = self.get_requirement("DockerRequirement")
+        if not dockerReq and use_container:
+            if self.find_default_container:
+                default_container = self.find_default_container(self)
+                if default_container:
+                    self.requirements.insert(0, {
+                        "class": "DockerRequirement",
+                        "dockerPull": default_container
+                    })
+                    dockerReq = self.requirements[0]
+                    if default_container == windows_default_container_id and use_container and onWindows():
+                        _logger.warning(DEFAULT_CONTAINER_MSG%(windows_default_container_id, windows_default_container_id))
+
+        if dockerReq and use_container:
+            return DockerCommandLineJob()
+        else:
+            for t in reversed(self.requirements):
+                if t["class"] == "DockerRequirement":
+                    raise UnsupportedRequirement(
+                        "--no-container, but this CommandLineTool has "
+                        "DockerRequirement under 'requirements'.")
+            return CommandLineJob()
 
     def makePathMapper(self, reffiles, stagedir, **kwargs):
         # type: (List[Any], Text, **Any) -> PathMapper
-        dockerReq, _ = self.get_requirement("DockerRequirement")
         return PathMapper(reffiles, kwargs["basedir"], stagedir)
 
-    def job(self, joborder, output_callback, **kwargs):
-        # type: (Dict[Text, Text], Callable[..., Any], **Any) -> Generator[Union[CommandLineJob, CallbackJob], None, None]
+    def updatePathmap(self, outdir, pathmap, fn):
+        # type: (Text, PathMapper, Dict) -> None
+        if "location" in fn and fn["location"] in pathmap:
+            pathmap.update(fn["location"], pathmap.mapper(fn["location"]).resolved,
+                           os.path.join(outdir, fn["basename"]),
+                           ("Writable" if fn.get("writable") else "") + fn["class"], False)
+        for sf in fn.get("secondaryFiles", []):
+            self.updatePathmap(outdir, pathmap, sf)
+        for ls in fn.get("listing", []):
+            self.updatePathmap(os.path.join(outdir, fn["basename"]), pathmap, ls)
+
+    def job(self,
+            job_order,  # type: Dict[Text, Text]
+            output_callbacks,  # type: Callable[[Any, Any], Any]
+            **kwargs  # type: Any
+            ):
+        # type: (...) -> Generator[Union[JobBase, CallbackJob], None, None]
 
         jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
 
@@ -174,27 +243,37 @@ class CommandLineTool(Process):
             cacheargs["outdir"] = "/out"
             cacheargs["tmpdir"] = "/tmp"
             cacheargs["stagedir"] = "/stage"
-            cachebuilder = self._init_job(joborder, **cacheargs)
+            cachebuilder = self._init_job(job_order, **cacheargs)
             cachebuilder.pathmapper = PathMapper(cachebuilder.files,
                                                  kwargs["basedir"],
                                                  cachebuilder.stagedir,
                                                  separateDirs=False)
             _check_adjust = partial(check_adjust, cachebuilder)
-            adjustFileObjs(cachebuilder.files, _check_adjust)
-            adjustFileObjs(cachebuilder.bindings, _check_adjust)
-            adjustDirObjs(cachebuilder.files, _check_adjust)
-            adjustDirObjs(cachebuilder.bindings, _check_adjust)
-            cmdline = flatten(map(cachebuilder.generate_arg, cachebuilder.bindings))
+            visit_class([cachebuilder.files, cachebuilder.bindings],
+                       ("File", "Directory"), _check_adjust)
+
+            cmdline = flatten(list(map(cachebuilder.generate_arg, cachebuilder.bindings)))
             (docker_req, docker_is_req) = self.get_requirement("DockerRequirement")
-            if docker_req and kwargs.get("use_container") is not False:
+            if docker_req and kwargs.get("use_container"):
                 dockerimg = docker_req.get("dockerImageId") or docker_req.get("dockerPull")
+            elif kwargs.get("default_container", None) is not None and kwargs.get("use_container"):
+                dockerimg = kwargs.get("default_container")
+
+            if dockerimg:
                 cmdline = ["docker", "run", dockerimg] + cmdline
             keydict = {u"cmdline": cmdline}
 
-            for _,f in cachebuilder.pathmapper.items():
+            for location, f in cachebuilder.pathmapper.items():
                 if f.type == "File":
+                    checksum = next((e['checksum'] for e in cachebuilder.files
+                            if 'location' in e and e['location'] == location
+                            and 'checksum' in e
+                            and e['checksum'] != 'sha1$hash'), None)
                     st = os.stat(f.resolved)
-                    keydict[f.resolved] = [st.st_size, int(st.st_mtime * 1000)]
+                    if checksum:
+                        keydict[f.resolved] = [st.st_size, checksum]
+                    else:
+                        keydict[f.resolved] = [st.st_size, int(st.st_mtime * 1000)]
 
             interesting = {"DockerRequirement",
                            "EnvVarRequirement",
@@ -205,23 +284,23 @@ class CommandLineTool(Process):
                     if r["class"] in interesting and r["class"] not in keydict:
                         keydict[r["class"]] = r
 
-            keydictstr = json.dumps(keydict, separators=(',',':'), sort_keys=True)
-            cachekey = hashlib.md5(keydictstr).hexdigest()
+            keydictstr = json.dumps(keydict, separators=(',', ':'), sort_keys=True)
+            cachekey = hashlib.md5(keydictstr.encode('utf-8')).hexdigest()
 
             _logger.debug("[job %s] keydictstr is %s -> %s", jobname,
-                    keydictstr, cachekey)
+                          keydictstr, cachekey)
 
             jobcache = os.path.join(kwargs["cachedir"], cachekey)
             jobcachepending = jobcache + ".pending"
 
             if os.path.isdir(jobcache) and not os.path.isfile(jobcachepending):
-                if docker_req and kwargs.get("use_container") is not False:
+                if docker_req and kwargs.get("use_container"):
                     cachebuilder.outdir = kwargs.get("docker_outdir") or "/var/spool/cwl"
                 else:
                     cachebuilder.outdir = jobcache
 
                 _logger.info("[job %s] Using cached output in %s", jobname, jobcache)
-                yield CallbackJob(self, output_callback, cachebuilder, jobcache)
+                yield CallbackJob(self, output_callbacks, cachebuilder, jobcache)
                 return
             else:
                 _logger.info("[job %s] Output of job will be cached in %s", jobname, jobcache)
@@ -230,22 +309,23 @@ class CommandLineTool(Process):
                 kwargs["outdir"] = jobcache
                 open(jobcachepending, "w").close()
 
-                def rm_pending_output_callback(output_callback, jobcachepending,
+                def rm_pending_output_callback(output_callbacks, jobcachepending,
                                                outputs, processStatus):
                     if processStatus == "success":
                         os.remove(jobcachepending)
-                    output_callback(outputs, processStatus)
-                output_callback = cast(
+                    output_callbacks(outputs, processStatus)
+
+                output_callbacks = cast(
                     Callable[..., Any],  # known bug in mypy
                     # https://github.com/python/mypy/issues/797
-                    partial(rm_pending_output_callback, output_callback,
-                        jobcachepending))
+                    partial(rm_pending_output_callback, output_callbacks,
+                            jobcachepending))
 
-        builder = self._init_job(joborder, **kwargs)
+        builder = self._init_job(job_order, **kwargs)
 
         reffiles = copy.deepcopy(builder.files)
 
-        j = self.makeJobRunner()
+        j = self.makeJobRunner(kwargs.get("use_container"))
         j.builder = builder
         j.joborder = builder.job
         j.stdin = None
@@ -260,11 +340,10 @@ class CommandLineTool(Process):
 
         if _logger.isEnabledFor(logging.DEBUG):
             _logger.debug(u"[job %s] initializing from %s%s",
-                         j.name,
-                         self.tool.get("id", ""),
-                         u" as part of %s" % kwargs["part_of"] if "part_of" in kwargs else "")
-            _logger.debug(u"[job %s] %s", j.name, json.dumps(joborder, indent=4))
-
+                          j.name,
+                          self.tool.get("id", ""),
+                          u" as part of %s" % kwargs["part_of"] if "part_of" in kwargs else "")
+            _logger.debug(u"[job %s] %s", j.name, json.dumps(job_order, indent=4))
 
         builder.pathmapper = None
         make_path_mapper_kwargs = kwargs
@@ -274,15 +353,52 @@ class CommandLineTool(Process):
         builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
         builder.requirements = j.requirements
 
-        if _logger.isEnabledFor(logging.DEBUG):
-            _logger.debug(u"[job %s] path mappings is %s", j.name, json.dumps({p: builder.pathmapper.mapper(p) for p in builder.pathmapper.files()}, indent=4))
-
         _check_adjust = partial(check_adjust, builder)
 
-        adjustFileObjs(builder.files, _check_adjust)
-        adjustFileObjs(builder.bindings, _check_adjust)
-        adjustDirObjs(builder.files, _check_adjust)
-        adjustDirObjs(builder.bindings, _check_adjust)
+        visit_class([builder.files, builder.bindings], ("File", "Directory"), _check_adjust)
+
+        initialWorkdir = self.get_requirement("InitialWorkDirRequirement")[0]
+        j.generatefiles = {"class": "Directory", "listing": [], "basename": ""}
+        if initialWorkdir:
+            ls = []  # type: List[Dict[Text, Any]]
+            if isinstance(initialWorkdir["listing"], (str, Text)):
+                ls = builder.do_eval(initialWorkdir["listing"])
+            else:
+                for t in initialWorkdir["listing"]:
+                    if "entry" in t:
+                        et = {u"entry": builder.do_eval(t["entry"])}
+                        if "entryname" in t:
+                            et["entryname"] = builder.do_eval(t["entryname"])
+                        else:
+                            et["entryname"] = None
+                        et["writable"] = t.get("writable", False)
+                        ls.append(et)
+                    else:
+                        ls.append(builder.do_eval(t))
+            for i, t in enumerate(ls):
+                if "entry" in t:
+                    if isinstance(t["entry"], string_types):
+                        ls[i] = {
+                            "class": "File",
+                            "basename": t["entryname"],
+                            "contents": t["entry"],
+                            "writable": t.get("writable")
+                        }
+                    else:
+                        if t.get("entryname") or t.get("writable"):
+                            t = copy.deepcopy(t)
+                            if t.get("entryname"):
+                                t["entry"]["basename"] = t["entryname"]
+                            t["entry"]["writable"] = t.get("writable")
+                        ls[i] = t["entry"]
+            j.generatefiles[u"listing"] = ls
+            for l in ls:
+                self.updatePathmap(builder.outdir, builder.pathmapper, l)
+            visit_class([builder.files, builder.bindings], ("File", "Directory"), _check_adjust)
+
+        if _logger.isEnabledFor(logging.DEBUG):
+            _logger.debug(u"[job %s] path mappings is %s", j.name,
+                          json.dumps({p: builder.pathmapper.mapper(p) for p in builder.pathmapper.files()}, indent=4))
 
         if self.tool.get("stdin"):
             with SourceLine(self.tool, "stdin", validate.ValidationException):
@@ -316,42 +432,38 @@ class CommandLineTool(Process):
             j.tmpdir = builder.tmpdir
             j.stagedir = builder.stagedir
 
-        initialWorkdir = self.get_requirement("InitialWorkDirRequirement")[0]
-        j.generatefiles = {"class": "Directory", "listing": [], "basename": ""}
-        if initialWorkdir:
-            ls = []  # type: List[Dict[Text, Any]]
-            if isinstance(initialWorkdir["listing"], (str, Text)):
-                ls = builder.do_eval(initialWorkdir["listing"])
-            else:
-                for t in initialWorkdir["listing"]:
-                    if "entry" in t:
-                        et = {u"entry": builder.do_eval(t["entry"])}
-                        if "entryname" in t:
-                            et["entryname"] = builder.do_eval(t["entryname"])
-                        else:
-                            et["entryname"] = None
-                        et["writable"] = t.get("writable", False)
-                        ls.append(et)
-                    else:
-                        ls.append(builder.do_eval(t))
-            for i,t in enumerate(ls):
-                if "entry" in t:
-                    if isinstance(t["entry"], basestring):
-                        ls[i] = {
-                            "class": "File",
-                            "basename": t["entryname"],
-                            "contents": t["entry"],
-                            "writable": t.get("writable")
-                        }
-                    else:
-                        if t["entryname"]:
-                            t = copy.deepcopy(t)
-                            t["entry"]["basename"] = t["entryname"]
-                            t["entry"]["writable"] = t.get("writable")
-                        ls[i] = t["entry"]
-            j.generatefiles[u"listing"] = ls
+        inplaceUpdateReq = self.get_requirement("http://commonwl.org/cwltool#InplaceUpdateRequirement")[0]
 
+        if inplaceUpdateReq:
+            j.inplace_update = inplaceUpdateReq["inplaceUpdate"]
         normalizeFilesDirs(j.generatefiles)
+
+        readers = {}
+        muts = set()
+
+        if builder.mutation_manager:
+            def register_mut(f):
+                muts.add(f["location"])
+                builder.mutation_manager.register_mutation(j.name, f)
+
+            def register_reader(f):
+                if f["location"] not in muts:
+                    builder.mutation_manager.register_reader(j.name, f)
+                    readers[f["location"]] = f
+
+            for li in j.generatefiles["listing"]:
+                li = cast(Dict[Text, Any], li)
+                if li.get("writable") and j.inplace_update:
+                    adjustFileObjs(li, register_mut)
+                    adjustDirObjs(li, register_mut)
+                else:
+                    adjustFileObjs(li, register_reader)
+                    adjustDirObjs(li, register_reader)
+
+            adjustFileObjs(builder.files, register_reader)
+            adjustFileObjs(builder.bindings, register_reader)
+            adjustDirObjs(builder.files, register_reader)
+            adjustDirObjs(builder.bindings, register_reader)
 
         j.environment = {}
         evr = self.get_requirement("EnvVarRequirement")[0]
@@ -369,20 +481,22 @@ class CommandLineTool(Process):
                 cmd.extend(aslist(arg))
             j.command_line = ["/bin/sh", "-c", " ".join(cmd)]
         else:
-            j.command_line = flatten(map(builder.generate_arg, builder.bindings))
+            j.command_line = flatten(list(map(builder.generate_arg, builder.bindings)))
 
         j.pathmapper = builder.pathmapper
         j.collect_outputs = partial(
             self.collect_output_ports, self.tool["outputs"], builder,
-            compute_checksum=kwargs.get("compute_checksum", True))
-        j.output_callback = output_callback
+            compute_checksum=kwargs.get("compute_checksum", True),
+            jobname=jobname,
+            readers=readers)
+        j.output_callback = output_callbacks
 
         yield j
 
-    def collect_output_ports(self, ports, builder, outdir, compute_checksum=True):
-        # type: (Set[Dict[Text, Any]], Builder, Text, bool) -> Dict[Text, Union[Text, List[Any], Dict[Text, Any]]]
+    def collect_output_ports(self, ports, builder, outdir, compute_checksum=True, jobname="", readers=None):
+        # type: (Set[Dict[Text, Any]], Builder, Text, bool, Text, Dict[Text, Any]) -> Dict[Text, Union[Text, List[Any], Dict[Text, Any]]]
+        ret = {}  # type: Dict[Text, Union[Text, List[Any], Dict[Text, Any]]]
         try:
-            ret = {}  # type: Dict[Text, Union[Text, List[Any], Dict[Text, Any]]]
             fs_access = builder.make_fs_access(outdir)
             custom_output = fs_access.join(outdir, "cwl.output.json")
             if fs_access.exists(custom_output):
@@ -395,30 +509,38 @@ class CommandLineTool(Process):
                     with SourceLine(ports, i, WorkflowException):
                         fragment = shortname(port["id"])
                         try:
-                            ret[fragment] = self.collect_output(port, builder, outdir, fs_access, compute_checksum=compute_checksum)
+                            ret[fragment] = self.collect_output(port, builder, outdir, fs_access,
+                                                                compute_checksum=compute_checksum)
                         except Exception as e:
                             _logger.debug(
                                 u"Error collecting output for parameter '%s'"
                                 % shortname(port["id"]), exc_info=True)
                             raise WorkflowException(
                                 u"Error collecting output for parameter '%s':\n%s"
-                                % (shortname(port["id"]), indent(unicode(e))))
+                                % (shortname(port["id"]), indent(u(str(e)))))
 
             if ret:
-                adjustFileObjs(ret,
-                        cast(Callable[[Any], Any],  # known bug in mypy
-                            # https://github.com/python/mypy/issues/797
-                            partial(revmap_file, builder, outdir)))
-                adjustFileObjs(ret, remove_path)
-                adjustDirObjs(ret, remove_path)
+                revmap = partial(revmap_file, builder, outdir)
+                adjustDirObjs(ret, trim_listing)
+                visit_class(ret, ("File", "Directory"), cast(Callable[[Any], Any], revmap))
+                visit_class(ret, ("File", "Directory"), remove_path)
                 normalizeFilesDirs(ret)
+                if builder.mutation_manager:
+                    adjustFileObjs(ret, builder.mutation_manager.set_generation)
+                visit_class(ret, ("File", "Directory"), partial(check_valid_locations, fs_access))
+
                 if compute_checksum:
                     adjustFileObjs(ret, partial(compute_checksums, fs_access))
 
-            validate.validate_ex(self.names.get_name("outputs_record_schema", ""), ret)
+            validate.validate_ex(self.names.get_name("outputs_record_schema", ""), ret,
+                                 strict=False, logger=_logger_validation_warnings)
             return ret if ret is not None else {}
         except validate.ValidationException as e:
-            raise WorkflowException("Error validating output record, " + Text(e) + "\n in " + json.dumps(ret, indent=4))
+            raise WorkflowException("Error validating output record. " + Text(e) + "\n in " + json.dumps(ret, indent=4))
+        finally:
+            if builder.mutation_manager and readers:
+                for r in readers.values():
+                    builder.mutation_manager.release_reader(jobname, r)
 
     def collect_output(self, schema, builder, outdir, fs_access, compute_checksum=True):
         # type: (Dict[Text, Any], Builder, Text, StdFsAccess, bool) -> Union[Dict[Text, Any], List[Union[Dict[Text, Any], Text]]]
@@ -438,7 +560,7 @@ class CommandLineTool(Process):
 
                     for gb in globpatterns:
                         if gb.startswith(outdir):
-                            gb = gb[len(outdir)+1:]
+                            gb = gb[len(outdir) + 1:]
                         elif gb == ".":
                             gb = outdir
                         elif gb.startswith("/"):
@@ -448,23 +570,28 @@ class CommandLineTool(Process):
                                        "class": "File" if fs_access.isfile(g) else "Directory"}
                                       for g in fs_access.glob(fs_access.join(outdir, gb))])
                         except (OSError, IOError) as e:
-                            _logger.warn(Text(e))
+                            _logger.warning(Text(e))
+                        except:
+                            _logger.error("Unexpected error from fs_access", exc_info=True)
+                            raise
 
                 for files in r:
-                    if files["class"] == "Directory" and "listing" not in files:
-                        getListing(fs_access, files)
+                    if files["class"] == "Directory":
+                        ll = builder.loadListing or (binding and binding.get("loadListing"))
+                        if ll and ll != "no_listing":
+                            get_listing(fs_access, files, (ll == "deep_listing"))
                     else:
                         with fs_access.open(files["location"], "rb") as f:
-                            contents = ""
+                            contents = b""
                             if binding.get("loadContents") or compute_checksum:
                                 contents = f.read(CONTENT_LIMIT)
                             if binding.get("loadContents"):
                                 files["contents"] = contents
                             if compute_checksum:
                                 checksum = hashlib.sha1()
-                                while contents != "":
+                                while contents != b"":
                                     checksum.update(contents)
-                                    contents = f.read(1024*1024)
+                                    contents = f.read(1024 * 1024)
                                 files["checksum"] = "sha1$%s" % checksum.hexdigest()
                             f.seek(0, 2)
                             filesize = f.tell()
@@ -511,7 +638,7 @@ class CommandLineTool(Process):
                             for sf in aslist(schema["secondaryFiles"]):
                                 if isinstance(sf, dict) or "$(" in sf or "${" in sf:
                                     sfpath = builder.do_eval(sf, context=primary)
-                                    if isinstance(sfpath, basestring):
+                                    if isinstance(sfpath, string_types):
                                         sfpath = revmap({"location": sfpath, "class": "File"})
                                 else:
                                     sfpath = {"location": substitute(primary["location"], sf), "class": "File"}
@@ -523,8 +650,7 @@ class CommandLineTool(Process):
             if not r and optional:
                 r = None
 
-        if (not r and isinstance(schema["type"], dict) and
-                schema["type"]["type"] == "record"):
+        if (not r and isinstance(schema["type"], dict) and schema["type"]["type"] == "record"):
             out = {}
             for f in schema["type"]["fields"]:
                 out[shortname(f["name"])] = self.collect_output(  # type: ignore

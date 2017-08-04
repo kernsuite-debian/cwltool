@@ -1,15 +1,17 @@
-import sys
-import urlparse
+from __future__ import absolute_import
+import copy
 import json
 import re
 import traceback
-import copy
+from typing import (Any, Callable, Dict, Text,  # pylint: disable=unused-import
+                    Tuple, Union)
+from copy import deepcopy
 
-from schema_salad.ref_resolver import Loader
+import six
+from six.moves import urllib
 import schema_salad.validate
-from typing import Any, Callable, Dict, List, Text, Tuple, Union  # pylint: disable=unused-import
-
-from ruamel.yaml.comments import CommentedSeq, CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
+from schema_salad.ref_resolver import Loader
 
 from .utils import aslist
 
@@ -29,6 +31,7 @@ def findId(doc, frg):  # type: (Any, Any) -> Dict
                 return f
     return None
 
+
 def fixType(doc):  # type: (Any) -> Any
     if isinstance(doc, list):
         for i, f in enumerate(doc):
@@ -42,12 +45,13 @@ def fixType(doc):  # type: (Any) -> Any
             return "#" + doc
     return doc
 
+
 def _draft2toDraft3dev1(doc, loader, baseuri, update_steps=True):
     # type: (Any, Loader, Text, bool) -> Any
     try:
         if isinstance(doc, dict):
             if "import" in doc:
-                imp = urlparse.urljoin(baseuri, doc["import"])
+                imp = urllib.parse.urljoin(baseuri, doc["import"])
                 impLoaded = loader.fetch(imp)
                 r = None  # type: Dict[Text, Any]
                 if isinstance(impLoaded, list):
@@ -57,14 +61,14 @@ def _draft2toDraft3dev1(doc, loader, baseuri, update_steps=True):
                 else:
                     raise Exception("Unexpected code path.")
                 r["id"] = imp
-                _, frag = urlparse.urldefrag(imp)
+                _, frag = urllib.parse.urldefrag(imp)
                 if frag:
                     frag = "#" + frag
                     r = findId(r, frag)
                 return _draft2toDraft3dev1(r, loader, imp)
 
             if "include" in doc:
-                return loader.fetch_text(urlparse.urljoin(baseuri, doc["include"]))
+                return loader.fetch_text(urllib.parse.urljoin(baseuri, doc["include"]))
 
             for typename in ("type", "items"):
                 if typename in doc:
@@ -82,7 +86,6 @@ def _draft2toDraft3dev1(doc, loader, baseuri, update_steps=True):
                                 doc["requirements"] = []
                             doc["requirements"].append({"class": "MultipleInputFeatureRequirement"})
 
-
             for a in doc:
                 doc[a] = _draft2toDraft3dev1(doc[a], loader, baseuri)
 
@@ -99,12 +102,14 @@ def _draft2toDraft3dev1(doc, loader, baseuri, update_steps=True):
             err = doc["name"]
         raise Exception(u"Error updating '%s'\n  %s\n%s" % (err, e, traceback.format_exc()))
 
+
 def draft2toDraft3dev1(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     return (_draft2toDraft3dev1(doc, loader, baseuri), "draft-3.dev1")
 
 
 digits = re.compile("\d+")
+
 
 def updateScript(sc):  # type: (Text) -> Text
     sc = sc.replace("$job", "inputs")
@@ -124,7 +129,7 @@ def _updateDev2Script(ent):  # type: (Any) -> Any
                 if not sp[0]:
                     sp.pop(0)
                 front = sp.pop(0)
-                sp = [Text(i) if digits.match(i) else "'"+i+"'"
+                sp = [Text(i) if digits.match(i) else "'" + i + "'"
                       for i in sp]
                 if front == "job":
                     return u"$(inputs[%s])" % ']['.join(sp)
@@ -143,7 +148,7 @@ def _updateDev2Script(ent):  # type: (Any) -> Any
 def _draftDraft3dev1toDev2(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Any
     doc = _updateDev2Script(doc)
-    if isinstance(doc, basestring):
+    if isinstance(doc, six.string_types):
         return doc
 
     # Convert expressions
@@ -167,7 +172,7 @@ def _draftDraft3dev1toDev2(doc, loader, baseuri):
                     if r["class"] == "ExpressionEngineRequirement":
                         if "engineConfig" in r:
                             doc["requirements"].append({
-                                "class":"InlineJavascriptRequirement",
+                                "class": "InlineJavascriptRequirement",
                                 "expressionLib": [updateScript(sc) for sc in aslist(r["engineConfig"])]
                             })
                             added = True
@@ -179,7 +184,7 @@ def _draftDraft3dev1toDev2(doc, loader, baseuri):
             else:
                 doc["requirements"] = []
             if not added:
-                doc["requirements"].append({"class":"InlineJavascriptRequirement"})
+                doc["requirements"].append({"class": "InlineJavascriptRequirement"})
 
     elif isinstance(doc, list):
         for i, a in enumerate(doc):
@@ -192,6 +197,7 @@ def draftDraft3dev1toDev2(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     return (_draftDraft3dev1toDev2(doc, loader, baseuri), "draft-3.dev2")
 
+
 def _draftDraft3dev2toDev3(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Any
     try:
@@ -200,7 +206,7 @@ def _draftDraft3dev2toDev3(doc, loader, baseuri):
                 if doc["@import"][0] == "#":
                     return doc["@import"]
                 else:
-                    imp = urlparse.urljoin(baseuri, doc["@import"])
+                    imp = urllib.parse.urljoin(baseuri, doc["@import"])
                     impLoaded = loader.fetch(imp)
                     r = {}  # type: Dict[Text, Any]
                     if isinstance(impLoaded, list):
@@ -210,14 +216,14 @@ def _draftDraft3dev2toDev3(doc, loader, baseuri):
                     else:
                         raise Exception("Unexpected code path.")
                     r["id"] = imp
-                    frag = urlparse.urldefrag(imp)[1]
+                    frag = urllib.parse.urldefrag(imp)[1]
                     if frag:
                         frag = "#" + frag
                         r = findId(r, frag)
                     return _draftDraft3dev2toDev3(r, loader, imp)
 
             if "@include" in doc:
-                return loader.fetch_text(urlparse.urljoin(baseuri, doc["@include"]))
+                return loader.fetch_text(urllib.parse.urljoin(baseuri, doc["@include"]))
 
             for a in doc:
                 doc[a] = _draftDraft3dev2toDev3(doc[a], loader, baseuri)
@@ -236,6 +242,7 @@ def _draftDraft3dev2toDev3(doc, loader, baseuri):
         import traceback
         raise Exception(u"Error updating '%s'\n  %s\n%s" % (err, e, traceback.format_exc()))
 
+
 def draftDraft3dev2toDev3(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     return (_draftDraft3dev2toDev3(doc, loader, baseuri), "draft-3.dev3")
@@ -247,7 +254,7 @@ def traverseImport(doc, loader, baseuri, func):
         if doc["$import"][0] == "#":
             return doc["$import"]
         else:
-            imp = urlparse.urljoin(baseuri, doc["$import"])
+            imp = urllib.parse.urljoin(baseuri, doc["$import"])
             impLoaded = loader.fetch(imp)
             r = {}  # type: Dict[Text, Any]
             if isinstance(impLoaded, list):
@@ -257,7 +264,7 @@ def traverseImport(doc, loader, baseuri, func):
             else:
                 raise Exception("Unexpected code path.")
             r["id"] = imp
-            _, frag = urlparse.urldefrag(imp)
+            _, frag = urllib.parse.urldefrag(imp)
             if frag:
                 frag = "#" + frag
                 r = findId(r, frag)
@@ -298,6 +305,7 @@ def draftDraft3dev3toDev4(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     return (_draftDraft3dev3toDev4(doc, loader, baseuri), "draft-3.dev4")
 
+
 def _draftDraft3dev4toDev5(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Any
     try:
@@ -332,16 +340,19 @@ def draftDraft3dev4toDev5(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     return (_draftDraft3dev4toDev5(doc, loader, baseuri), "draft-3.dev5")
 
+
 def draftDraft3dev5toFinal(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     return (doc, "draft-3")
+
 
 def _draft3toDraft4dev1(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Any
     if isinstance(doc, dict):
         if "class" in doc and doc["class"] == "Workflow":
+
             def fixup(f):  # type: (Text) -> Text
-                doc, frg = urlparse.urldefrag(f)
+                doc, frg = urllib.parse.urldefrag(f)
                 frg = '/'.join(frg.rsplit('.', 1))
                 return doc + "#" + frg
 
@@ -362,6 +373,8 @@ def _draft3toDraft4dev1(doc, loader, baseuri):
             for out in doc["outputs"]:
                 out["source"] = fixup(out["source"])
         for key, value in doc.items():
+            if key == 'run':
+                value = deepcopy(value)
             doc[key] = _draft3toDraft4dev1(value, loader, baseuri)
     elif isinstance(doc, list):
         for i, a in enumerate(doc):
@@ -369,10 +382,12 @@ def _draft3toDraft4dev1(doc, loader, baseuri):
 
     return doc
 
+
 def draft3toDraft4dev1(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     """Public updater for draft-3 to draft-4.dev1."""
     return (_draft3toDraft4dev1(doc, loader, baseuri), "draft-4.dev1")
+
 
 def _draft4Dev1toDev2(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Any
@@ -382,12 +397,15 @@ def _draft4Dev1toDev2(doc, loader, baseuri):
                 out["outputSource"] = out["source"]
                 del out["source"]
         for key, value in doc.items():
+            if key == 'run':
+                value = deepcopy(value)
             doc[key] = _draft4Dev1toDev2(value, loader, baseuri)
     elif isinstance(doc, list):
         for i, a in enumerate(doc):
             doc[i] = _draft4Dev1toDev2(a, loader, baseuri)
 
     return doc
+
 
 def draft4Dev1toDev2(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
@@ -423,10 +441,12 @@ def _draft4Dev2toDev3(doc, loader, baseuri):
 
     return doc
 
+
 def draft4Dev2toDev3(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     """Public updater for draft-4.dev2 to draft-4.dev3."""
     return (_draft4Dev2toDev3(doc, loader, baseuri), "draft-4.dev3")
+
 
 def _draft4Dev3to1_0dev4(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Any
@@ -441,15 +461,18 @@ def _draft4Dev3to1_0dev4(doc, loader, baseuri):
             doc[i] = _draft4Dev3to1_0dev4(a, loader, baseuri)
     return doc
 
+
 def draft4Dev3to1_0dev4(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     """Public updater for draft-4.dev3 to v1.0.dev4."""
     return (_draft4Dev3to1_0dev4(doc, loader, baseuri), "v1.0.dev4")
 
+
 def v1_0dev4to1_0(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
     """Public updater for v1.0.dev4 to v1.0."""
     return (doc, "v1.0")
+
 
 def v1_0to1_1_0dev1(doc, loader, baseuri):
     # type: (Any, Loader, Text) -> Tuple[Any, Text]
@@ -482,10 +505,12 @@ ALLUPDATES.update(DEVUPDATES)
 
 LATEST = "v1.0"
 
+
 def identity(doc, loader, baseuri):  # pylint: disable=unused-argument
     # type: (Any, Loader, Text) -> Tuple[Any, Union[Text, Text]]
     """The default, do-nothing, CWL document upgrade function."""
     return (doc, doc["cwlVersion"])
+
 
 def checkversion(doc, metadata, enable_dev):
     # type: (Union[CommentedSeq, CommentedMap], CommentedMap, bool) -> Tuple[Dict[Text, Any], Text]  # pylint: disable=line-too-long
@@ -519,12 +544,13 @@ def checkversion(doc, metadata, enable_dev):
                     "Update your document to a stable version (%s) or use "
                     "--enable-dev to enable support for development and "
                     "deprecated versions." % (version, ", ".join(
-                        UPDATES.keys())))
+                        list(UPDATES.keys()))))
         else:
             raise schema_salad.validate.ValidationException(
                 u"Unrecognized version %s" % version)
 
     return (cdoc, version)
+
 
 def update(doc, loader, baseuri, enable_dev, metadata):
     # type: (Union[CommentedSeq, CommentedMap], Loader, Text, bool, Any) -> dict
