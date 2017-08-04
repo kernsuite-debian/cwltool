@@ -1,14 +1,19 @@
-import subprocess
+from __future__ import absolute_import
 import logging
-import sys
-import requests
 import os
-from .errors import WorkflowException
 import re
+import subprocess
+import sys
 import tempfile
-from typing import Any, Text, Union
+from io import open
+from typing import Dict, List, Text
+
+import requests
+
+from .errors import WorkflowException
 
 _logger = logging.getLogger("cwltool")
+
 
 def get_image(dockerRequirement, pull_image, dry_run=False):
     # type: (Dict[Text, Text], bool, bool) -> bool
@@ -18,12 +23,23 @@ def get_image(dockerRequirement, pull_image, dry_run=False):
         dockerRequirement["dockerImageId"] = dockerRequirement["dockerPull"]
 
     for ln in subprocess.check_output(
-            ["docker", "images", "--no-trunc", "--all"]).splitlines():
+            ["docker", "images", "--no-trunc", "--all"]).decode('utf-8').splitlines():
         try:
             m = re.match(r"^([^ ]+)\s+([^ ]+)\s+([^ ]+)", ln)
             sp = dockerRequirement["dockerImageId"].split(":")
             if len(sp) == 1:
                 sp.append("latest")
+            elif len(sp) == 2:
+                #  if sp[1] doesn't  match valid tag names, it is a part of repository
+                if not re.match(r'[\w][\w.-]{0,127}', sp[1]):
+                    sp[0] = sp[0] + ":" + sp[1]
+                    sp[1] = "latest"
+            elif len(sp) == 3:
+                if re.match(r'[\w][\w.-]{0,127}', sp[2]):
+                    sp[0] = sp[0] + ":" + sp[1]
+                    sp[1] = sp[2]
+                    del sp[2]
+
             # check for repository:tag match or image id match
             if ((sp[0] == m.group(1) and sp[1] == m.group(2)) or dockerRequirement["dockerImageId"] == m.group(3)):
                 found = True
@@ -32,7 +48,7 @@ def get_image(dockerRequirement, pull_image, dry_run=False):
             pass
 
     if not found and pull_image:
-        cmd = []  # type: List[str]
+        cmd = []  # type: List[Text]
         if "dockerPull" in dockerRequirement:
             cmd = ["docker", "pull", str(dockerRequirement["dockerPull"])]
             _logger.info(Text(cmd))
@@ -41,10 +57,10 @@ def get_image(dockerRequirement, pull_image, dry_run=False):
                 found = True
         elif "dockerFile" in dockerRequirement:
             dockerfile_dir = str(tempfile.mkdtemp())
-            with open(os.path.join(dockerfile_dir, "Dockerfile"), "w") as df:
-                df.write(dockerRequirement["dockerFile"])
+            with open(os.path.join(dockerfile_dir, "Dockerfile"), "wb") as df:
+                df.write(dockerRequirement["dockerFile"].encode('utf-8'))
             cmd = ["docker", "build", "--tag=%s" %
-                str(dockerRequirement["dockerImageId"]), dockerfile_dir]
+                   str(dockerRequirement["dockerImageId"]), dockerfile_dir]
             _logger.info(Text(cmd))
             if not dry_run:
                 subprocess.check_call(cmd, stdout=sys.stderr)
@@ -62,7 +78,7 @@ def get_image(dockerRequirement, pull_image, dry_run=False):
                     _logger.info(u"Sending GET request to %s", dockerRequirement["dockerLoad"])
                     req = requests.get(dockerRequirement["dockerLoad"], stream=True)
                     n = 0
-                    for chunk in req.iter_content(1024*1024):
+                    for chunk in req.iter_content(1024 * 1024):
                         n += len(chunk)
                         _logger.info("\r%i bytes" % (n))
                         loadproc.stdin.write(chunk)
@@ -73,7 +89,7 @@ def get_image(dockerRequirement, pull_image, dry_run=False):
                 found = True
         elif "dockerImport" in dockerRequirement:
             cmd = ["docker", "import", str(dockerRequirement["dockerImport"]),
-                str(dockerRequirement["dockerImageId"])]
+                   str(dockerRequirement["dockerImageId"])]
             _logger.info(Text(cmd))
             if not dry_run:
                 subprocess.check_call(cmd, stdout=sys.stderr)

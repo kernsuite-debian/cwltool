@@ -1,11 +1,11 @@
-from . import main
-from . import load_tool
-from . import workflow
+from __future__ import absolute_import
 import os
-from .process import Process
-from typing import Any, Text, Union, Tuple
 from typing import Callable as tCallable
-import argparse
+from typing import Any, Dict, Text, Tuple, Union
+
+from . import load_tool, main, workflow
+from .process import Process
+
 
 class WorkflowStatus(Exception):
     def __init__(self, out, status):
@@ -13,6 +13,7 @@ class WorkflowStatus(Exception):
         super(WorkflowStatus, self).__init__("Completed %s" % status)
         self.out = out
         self.status = status
+
 
 class Callable(object):
     def __init__(self, t, factory):  # type: (Process, Factory) -> None
@@ -29,11 +30,15 @@ class Callable(object):
         else:
             return out
 
+
 class Factory(object):
-    def __init__(self, makeTool=workflow.defaultMakeTool,
-                 executor=main.single_job_executor,
-                 **execkwargs):
-        # type: (tCallable[[Dict[Text, Any], Any], Process],tCallable[...,Tuple[Dict[Text,Any], Text]], **Any) -> None
+    def __init__(self,
+                 makeTool=workflow.defaultMakeTool,  # type: tCallable[[Any], Process]
+                 # should be tCallable[[Dict[Text, Any], Any], Process] ?
+                 executor=main.single_job_executor,  # type: tCallable[...,Tuple[Dict[Text,Any], Text]]
+                 **execkwargs  # type: Any
+                 ):
+        # type: (...) -> None
         self.makeTool = makeTool
         self.executor = executor
         self.execkwargs = execkwargs

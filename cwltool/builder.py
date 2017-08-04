@@ -1,13 +1,24 @@
+from __future__ import absolute_import
 import copy
-from .utils import aslist
-from . import expression
+import os
+from typing import Any, Callable, Dict, List, Text, Type, Union
+
+import six
+from six import iteritems, string_types
+
 import avro
 import schema_salad.validate as validate
 from schema_salad.sourceline import SourceLine
-from typing import Any, Callable, Text, Type, Union
+
+from . import expression
 from .errors import WorkflowException
+from .mutation import MutationManager
+from .pathmapper import (PathMapper, get_listing, normalizeFilesDirs,
+                         visit_class)
 from .stdfsaccess import StdFsAccess
-from .pathmapper import PathMapper, adjustFileObjs, adjustDirObjs, normalizeFilesDirs
+from .utils import aslist, get_feature, docker_windows_path_adjust, onWindows
+
+AvroSchemaFromJSONData = avro.schema.make_avsc_object
 
 CONTENT_LIMIT = 64 * 1024
 
@@ -18,8 +29,8 @@ def substitute(value, replace):  # type: (Text, Text) -> Text
     else:
         return value + replace
 
-class Builder(object):
 
+class Builder(object):
     def __init__(self):  # type: () -> None
         self.names = None  # type: avro.schema.Names
         self.schemaDefs = None  # type: Dict[Text, Dict[Text, Any]]
@@ -36,11 +47,30 @@ class Builder(object):
         self.pathmapper = None  # type: PathMapper
         self.stagedir = None  # type: Text
         self.make_fs_access = None  # type: Type[StdFsAccess]
-        self.build_job_script = None  # type: Callable[[List[str]], Text]
         self.debug = False  # type: bool
+        self.mutation_manager = None  # type: MutationManager
 
-    def bind_input(self, schema, datum, lead_pos=[], tail_pos=[]):
+        # One of "no_listing", "shallow_listing", "deep_listing"
+        # Will be default "no_listing" for CWL v1.1
+        self.loadListing = "deep_listing"  # type: Union[None, str]
+
+        self.find_default_container = None  # type: Callable[[], Text]
+        self.job_script_provider = None  # type: Any
+
+    def build_job_script(self, commands):
+        # type: (List[bytes]) -> Text
+        build_job_script_method = getattr(self.job_script_provider, "build_job_script", None)  # type: Callable[[Builder, List[bytes]], Text]
+        if build_job_script_method:
+            return build_job_script_method(self, commands)
+        else:
+            return None
+
+    def bind_input(self, schema, datum, lead_pos=None, tail_pos=None):
         # type: (Dict[Text, Any], Any, Union[int, List[int]], List[int]) -> List[Dict[Text, Any]]
+        if tail_pos is None:
+            tail_pos = []
+        if lead_pos is None:
+            lead_pos = []
         bindings = []  # type: List[Dict[Text,Text]]
         binding = None  # type: Dict[Text,Any]
         if "inputBinding" in schema and isinstance(schema["inputBinding"], dict):
@@ -61,7 +91,7 @@ class Builder(object):
                 elif isinstance(t, dict) and "name" in t and self.names.has_name(t["name"], ""):
                     avsc = self.names.get_name(t["name"], "")
                 else:
-                    avsc = avro.schema.make_avsc_object(t, self.names)
+                    avsc = AvroSchemaFromJSONData(t, self.names)
                 if validate.validate(avsc, datum):
                     schema = copy.deepcopy(schema)
                     schema["type"] = t
@@ -105,9 +135,10 @@ class Builder(object):
 
             if schema["type"] == "File":
                 self.files.append(datum)
-                if binding and binding.get("loadContents"):
-                    with self.fs_access.open(datum["location"], "rb") as f:
-                        datum["contents"] = f.read(CONTENT_LIMIT)
+                if binding:
+                    if binding.get("loadContents"):
+                        with self.fs_access.open(datum["location"], "rb") as f:
+                            datum["contents"] = f.read(CONTENT_LIMIT)
 
                 if "secondaryFiles" in schema:
                     if "secondaryFiles" not in datum:
@@ -115,7 +146,7 @@ class Builder(object):
                     for sf in aslist(schema["secondaryFiles"]):
                         if isinstance(sf, dict) or "$(" in sf or "${" in sf:
                             secondary_eval = self.do_eval(sf, context=datum)
-                            if isinstance(secondary_eval, basestring):
+                            if isinstance(secondary_eval, string_types):
                                 sfpath = {"location": secondary_eval,
                                           "class": "File"}
                             else:
@@ -132,11 +163,13 @@ class Builder(object):
                     self.files.append(f)
                     return f
 
-                adjustFileObjs(datum.get("secondaryFiles", []), _capture_files)
+                visit_class(datum.get("secondaryFiles", []), ("File", "Directory"), _capture_files)
 
             if schema["type"] == "Directory":
+                ll = self.loadListing or (binding and binding.get("loadListing"))
+                if ll and ll != "no_listing":
+                    get_listing(self.fs_access, datum, (ll == "deep_listing"))
                 self.files.append(datum)
-
 
         # Position to front of the sort key
         if binding:
@@ -150,6 +183,11 @@ class Builder(object):
         if isinstance(value, dict) and value.get("class") in ("File", "Directory"):
             if "path" not in value:
                 raise WorkflowException(u"%s object missing \"path\": %s" % (value["class"], value))
+
+            # Path adjust for windows file path when passing to docker, docker accepts unix like path only
+            (docker_req, docker_is_req) = get_feature(self, "DockerRequirement")
+            if onWindows() and docker_req is not None:  # docker_req is none only when there is no dockerRequirement mentioned in hints and Requirement
+                return docker_windows_path_adjust(value["path"])
             return value["path"]
         else:
             return Text(value)
@@ -198,7 +236,7 @@ class Builder(object):
         # type: (Union[Dict[Text, Text], Text], Any, bool, bool) -> Any
         if recursive:
             if isinstance(ex, dict):
-                return {k: self.do_eval(v, context, pull_image, recursive) for k,v in ex.iteritems()}
+                return {k: self.do_eval(v, context, pull_image, recursive) for k, v in iteritems(ex)}
             if isinstance(ex, list):
                 return [self.do_eval(v, context, pull_image, recursive) for v in ex]
 
