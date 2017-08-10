@@ -2,7 +2,9 @@ cwltool (1.0.20170114120503-2) UNRELEASED; urgency=medium
 
   [ Steffen Moeller ]
   * debian/upstream/metadata: Added refs to registry databases,
-    to RRID SCR_015528 in particular
+    to SciCrunch SCR_015528 in particular
+  * Added build-dep on python-rdflib
+  * Bumped policy to 4.0.1
 
   [ Sascha Steinbiss ]
   * Add missing build-dep on python-avro.
