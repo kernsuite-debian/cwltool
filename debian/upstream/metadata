@@ -23,7 +23,7 @@ Reference:
 Repository-Browse: https://github.com/common-workflow-language/cwltool
 Repository: https://github.com/common-workflow-language/cwltool.git
 Registry:
-  - Name: RRID
+  - Name: SciCrunch
     Entry: SCR_015528
   - Name: OMICtools
     Entry: NA
