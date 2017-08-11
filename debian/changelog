@@ -8,11 +8,9 @@ cwltool (1.0.20170803160545-1) UNRELEASED; urgency=medium
 
   [ Sascha Steinbiss ]
   * Add missing build-dep on python-avro.
-  * Relax version requirement for python-typing.
 
   [ Michael R. Crusoe ]
   * New upstream release.
-  * Bump standards to 4.0.0
 
  -- Michael R. Crusoe <michael.crusoe@gmail.com>  Fri, 04 Aug 2017 05:03:10 -0700
 
