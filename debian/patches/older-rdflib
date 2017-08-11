@@ -1,8 +1,10 @@
+Author: Michael R. Crusoe <mrc@commonwl.org>
+Subject: Relax rdflib dependency
 --- cwltool.orig/setup.py
 +++ cwltool/setup.py
 @@ -50,7 +50,7 @@
            'setuptools',
-           'requests >= 1.0',
+           'requests >= 2.12.4',
            'ruamel.yaml >= 0.12.4, < 0.15',
 -          'rdflib >= 4.2.2, < 4.3.0',
 +          'rdflib',
