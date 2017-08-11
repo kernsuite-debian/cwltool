@@ -1,11 +1,11 @@
 setuptools
-requests>=1.0
-ruamel.yaml<0.15,>=0.12.4
-rdflib<4.3.0,>=4.2.2
-shellescape<3.5,>=3.4.1
-schema-salad<3,>=2.6
-typing>=3.5.3
-six>=1.8.0
+requests >= 2.12.4
+ruamel.yaml >= 0.12.4, < 0.15
+rdflib >= 4.2.2, < 4.3.0
+shellescape >= 3.4.1, < 3.5
+schema-salad >= 2.6, < 3
+typing >= 3.5.3
+six >= 1.8.0
 
 [deps]
-galaxy-lib>=17.09.3
+galaxy-lib >= 17.09.3
