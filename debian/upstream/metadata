@@ -9,7 +9,7 @@ Cite-As: |
 Contact: common-workflow-language@googlegroups.com
 Name: cwltool
 Reference:
-- Author: >
+  Author: >
     Peter Amstutz and Michael R. Crusoe and Nebojša Tijanić and Brad Chapman
     and John Chilton and Michael Heuer and Andrey Kartashov and Dan Leehr and
     Hervé Ménager and Maya Nedeljkovich and Matt Scales and Stian Soiland-Reyes
@@ -27,5 +27,5 @@ Registry:
     Entry: SCR_015528
   - Name: OMICtools
     Entry: NA
-  - Name; bio.tools
+  - Name: bio.tools
     Entry: NA
