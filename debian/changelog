@@ -1,3 +1,13 @@
+cwltool (1.0.20170810192106-2) UNRELEASED; urgency=medium
+
+  [ Andreas Tille ]
+  * d/upstream/metadata: Fix Syntax
+
+  [ Fabian Klötzl ]
+  * d/upstream/metadata: Fix Bug-Submit URL (closes: #874355)
+
+ -- Fabian Klötzl <kloetzl@evolbio.mpg.de>  Tue, 12 Sep 2017 14:59:51 +0200
+
 cwltool (1.0.20170810192106-1) unstable; urgency=medium
 
   [ Steffen Moeller ]
