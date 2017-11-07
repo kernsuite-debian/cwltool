@@ -1,3 +1,9 @@
+cwltool (1.0.20170810192106-2kern1) xenial; urgency=medium
+
+  * relaxed dependencies, disable manpage
+
+ -- KERN packaging <packaging@kernsuite.info>  Tue, 07 Nov 2017 14:35:49 +0200
+
 cwltool (1.0.20170810192106-2) unstable; urgency=medium
 
   * Team upload
